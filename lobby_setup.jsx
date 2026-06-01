@@ -357,17 +357,18 @@ function SlotCard({ label, accent, t, active, onClick }) {
       background: active ? `${accent}1A` : 'var(--surface)',
       boxShadow: active ? `0 0 0 1.5px ${accent}, 0 0 22px ${accent}40` : '0 0 0 1px var(--line) inset',
       minHeight: 118, display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+      overflow: 'hidden', maxWidth: '100%',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, boxShadow: `0 0 8px ${accent}` }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: accent, boxShadow: `0 0 8px ${accent}`, flexShrink: 0 }} />
         <span className="eyebrow" style={{ color: accent, fontSize: 10 }}>{label}</span>
       </div>
       {t ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, width: '100%' }}>
           <Cover t={t} size={40} />
-          <div style={{ minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
-            <div style={{ fontSize: 11, color: 'var(--faint)' }}>{t.artist}</div>
+            <div style={{ fontSize: 11, color: 'var(--faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.artist}</div>
           </div>
         </div>
       ) : (
