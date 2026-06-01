@@ -66,6 +66,8 @@
     await roomRef(code, "publicState").set({
       status: "lobby",
       round: 1,
+      // who is allowed to vote — operator-controlled, persists across rounds
+      voting: { players: true, audience: true },
       audio: { playing: false, anchorServerMs: window.fb.serverNow(), anchorPosSec: 0 },
       timer: {
         running: false,
@@ -188,6 +190,25 @@
   // ── host: status + setup ─────────────────────────────────
   function setStatus(room, status) {
     return roomRef(room, "publicState/status").set(status);
+  }
+
+  // host: set who may vote ("players" / "audience" booleans). Persists across rounds.
+  function setVoting(room, voting) {
+    return roomRef(room, "publicState/voting").update(voting);
+  }
+
+  // default when a room predates the voting config: both roles may vote.
+  function votingConfig(ps) {
+    const v = (ps && ps.voting) || {};
+    return {
+      players: v.players !== false,
+      audience: v.audience !== false,
+    };
+  }
+  // can this player (by role) vote, given the room's voting config?
+  function canVote(ps, player) {
+    const v = votingConfig(ps);
+    return window.IMP.isPlaying(player) ? v.players : v.audience;
   }
 
   // ── shared music library (global, persists across rooms/sessions) ──
@@ -362,6 +383,7 @@
   // ── host: reveal + scoring ───────────────────────────────
   async function tallyAndReveal(room) {
     const round = (await roomRef(room, "publicState/round").get()).val() || 1;
+    const ps = (await roomRef(room, "publicState").get()).val() || {};
     const secret = (await roomRef(room, "round").get()).val() || {};
     const votes = (await roomRef(room, "votes").get()).val() || {};
     const players = (await roomRef(room, "players").get()).val() || {};
@@ -382,10 +404,13 @@
     // 5 pts + a per-person consecutive-streak bonus (+1 per round in the streak).
     // A wrong guess or no vote resets that person's streak to 0.
     // The impostor doesn't guess; they get +5 if they got away.
+    // Only roles allowed to vote this round are scored. A role that wasn't
+    // allowed to vote has its streak FROZEN (left as-is, not reset).
     const deltas = {};
     const streaks = {};
     Object.entries(players).forEach(([uid, p]) => {
       if (!p || !p.connected || uid === impostorUid) return; // impostor scored separately
+      if (!canVote(ps, p)) return;                           // role couldn't vote → freeze streak
       const guessedRight = votes[uid] === impostorUid;
       if (guessedRight) {
         const newStreak = (prevStreaks[uid] || 0) + 1;
@@ -470,6 +495,9 @@
     roomOwnedBy,
     // host
     setStatus,
+    setVoting,
+    votingConfig,
+    canVote,
     uploadTrack,
     watchLibrary,
     reconcileLibrary,

@@ -16,6 +16,8 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
   const live = window.IMP.connectedList(players);
   const playingMembers = window.IMP.playingList(players);
   const audienceMembers = window.IMP.audienceList(players);
+  const voteCfg = Game.votingConfig(ps);
+  const eligibleVoters = live.filter(p => p.id !== draft.impostorId && Game.canVote(ps, p));
   const crowd = withId(tracks[draft.common], draft.common);
   const imp = withId(tracks[draft.impostor], draft.impostor);
   const playing = !!(ps.audio && ps.audio.playing);
@@ -165,7 +167,10 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
       </div>
 
       <div className="dock">
-        <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 11.5, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>{voted}/{live.length} have voted</p>
+        <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 11.5, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>
+          {eligibleVoters.filter(p => votes && votes[p.id]).length}/{eligibleVoters.length} have voted
+          {(!voteCfg.players || !voteCfg.audience) && <span style={{ color: 'var(--amber)' }}> · {voteCfg.players ? 'players' : 'audience'} only</span>}
+        </p>
         <div style={{ display: 'flex', gap: 10 }}>
           {onEndGame && <button className="btn btn--ghost" style={{ flex: '0 0 auto', width: 'auto', padding: '18px 18px' }} onClick={onEndGame}>End</button>}
           <button className="btn btn--danger" style={{ flex: 1 }} onClick={onReveal}><Icon.eye c="#fff"/> Reveal the impostor</button>

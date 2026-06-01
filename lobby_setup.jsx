@@ -128,14 +128,17 @@ function PlayerCell({ p, score, delay, onKick, onRole }) {
 }
 
 /* ════════════════════ SETUP ════════════════════ */
-function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, onBack, onStart, onUpload }) {
+function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting, onVoting, onBack, onStart, onUpload }) {
+  voting = voting || { players: true, audience: true };
+  const audienceCount = audienceList(players).length;
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
   const fileRef = useRef(null);
   const live = playingList(players);   // only playing members can be the impostor
   const trackList = toList(tracks);
   const impostorConnected = live.some(p => p.id === draft.impostorId);
-  const ready = draft.common && draft.impostor && draft.impostorId && impostorConnected;
+  const someoneCanVote = voting.players || voting.audience;
+  const ready = draft.common && draft.impostor && draft.impostorId && impostorConnected && someoneCanVote;
 
   const trackById = (id) => tracks[id] ? Object.assign({ id }, tracks[id]) : null;
 
@@ -227,6 +230,19 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, onBack
           })}
         </div>
 
+        {/* who votes */}
+        <SectionLabel accent="var(--amber)">Who can vote?</SectionLabel>
+        <div className="card" style={{ overflow: 'hidden', marginBottom: 24 }}>
+          <VoteToggle label="Players" sub={`${live.length} playing`} accent="var(--lime)" on={voting.players} onClick={() => onVoting({ players: !voting.players })} />
+          <div style={{ height: 1, background: 'var(--line)' }} />
+          <VoteToggle label="Audience" sub={`${audienceCount} watching`} accent="var(--violet)" on={voting.audience} onClick={() => onVoting({ audience: !voting.audience })} />
+          {!voting.players && !voting.audience && (
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--magenta)', textAlign: 'center', margin: 0, padding: '10px 14px' }}>
+              Nobody can vote — turn on at least one.
+            </p>
+          )}
+        </div>
+
         {/* impostor picker */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 12px' }}>
           <SectionLabel accent="var(--magenta)">Who&apos;s the impostor?</SectionLabel>
@@ -254,6 +270,32 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, onBack
         </button>
       </div>
     </div>
+  );
+}
+
+function VoteToggle({ label, sub, accent, on, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left',
+      display: 'flex', alignItems: 'center', gap: 12, padding: '13px 14px',
+      background: on ? `${accent}14` : 'transparent',
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: on ? 'var(--ink)' : 'var(--muted)' }}>{label}</div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--faint)' }}>{sub}</div>
+      </div>
+      {/* switch */}
+      <div style={{
+        width: 44, height: 26, borderRadius: 999, flexShrink: 0, position: 'relative',
+        background: on ? accent : 'var(--surface-3)', transition: 'background .15s ease',
+        boxShadow: on ? `0 0 12px ${accent}66` : '0 0 0 1px var(--line) inset',
+      }}>
+        <div style={{
+          position: 'absolute', top: 3, left: on ? 21 : 3, width: 20, height: 20,
+          borderRadius: '50%', background: '#0A0410', transition: 'left .15s ease',
+        }} />
+      </div>
+    </button>
   );
 }
 

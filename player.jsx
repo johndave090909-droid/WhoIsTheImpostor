@@ -344,7 +344,7 @@ function PlayerApp() {
   } else if (!ps || status === 'lobby' || status === 'setup') {
     view = <WaitView me={me} room={room} count={window.IMP.connectedList(players).length} status={status} amPlaying={amPlaying} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else if (status === 'live') {
-    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} amPlaying={amPlaying} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
+    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} amPlaying={amPlaying} canVote={Game.canVote(ps, players[uid])} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
   } else if (status === 'reveal') {
     view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else {
@@ -430,7 +430,7 @@ function WaitView({ me, room, count, status, amPlaying, onBoard, onLeave }) {
 }
 
 /* ════════════ LIVE (player) ════════════ */
-function PlayLiveView({ me, ps, players, uid, amPlaying, assignReady, loadPct, started, onStart, myVote, onVote }) {
+function PlayLiveView({ me, ps, players, uid, amPlaying, canVote, assignReady, loadPct, started, onStart, myVote, onVote }) {
   const remaining = Game.timerRemaining(ps.timer);
   const playing = !!(ps.audio && ps.audio.playing);
   // you can only accuse someone who's actually playing this round
@@ -495,27 +495,38 @@ function PlayLiveView({ me, ps, players, uid, amPlaying, assignReady, loadPct, s
         </div>
 
         {/* vote */}
-        <SectionLabel accent="var(--magenta)">Who&apos;s the impostor?</SectionLabel>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--faint)', margin: '0 4px 14px' }}>
-          {amPlaying
-            ? 'Hearing something off? Lock your guess — you can change it until the reveal.'
-            : 'Watch the players react. Lock your guess — you can change it until the reveal.'}
-        </p>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', padding: '4px 0' }}>
-          {others.map((p) => {
-            const sel = myVote === p.id;
-            return (
-              <button key={p.id} onClick={() => onVote(p.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: 66 }}>
-                <Avatar p={p} size={56} ring={sel ? 'var(--magenta)' : undefined} dim={myVote && !sel} />
-                <span style={{ fontSize: 12, fontFamily: 'var(--font-display)', fontWeight: 700, color: sel ? 'var(--magenta)' : 'var(--muted)' }}>{p.name}</span>
-              </button>
-            );
-          })}
-        </div>
+        {canVote ? (
+          <>
+            <SectionLabel accent="var(--magenta)">Who&apos;s the impostor?</SectionLabel>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--faint)', margin: '0 4px 14px' }}>
+              {amPlaying
+                ? 'Hearing something off? Lock your guess — you can change it until the reveal.'
+                : 'Watch the players react. Lock your guess — you can change it until the reveal.'}
+            </p>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', padding: '4px 0' }}>
+              {others.map((p) => {
+                const sel = myVote === p.id;
+                return (
+                  <button key={p.id} onClick={() => onVote(p.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: 66 }}>
+                    <Avatar p={p} size={56} ring={sel ? 'var(--magenta)' : undefined} dim={myVote && !sel} />
+                    <span style={{ fontSize: 12, fontFamily: 'var(--font-display)', fontWeight: 700, color: sel ? 'var(--magenta)' : 'var(--muted)' }}>{p.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="card" style={{ padding: '22px 18px', textAlign: 'center' }}>
+            <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--ink)', margin: 0 }}>Voting is off for your group</p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--faint)', margin: '8px 0 0' }}>
+              {amPlaying ? 'The booth has only the audience voting this round.' : 'The booth has only the players voting this round.'}
+            </p>
+          </div>
+        )}
       </div>
       <div className="dock">
-        <p style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 12, color: myVote ? 'var(--lime)' : 'var(--faint)', margin: 0 }}>
-          {myVote ? '✓ Vote locked — tap another to change' : 'No vote yet'}
+        <p style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 12, color: !canVote ? 'var(--faint)' : myVote ? 'var(--lime)' : 'var(--faint)', margin: 0 }}>
+          {!canVote ? 'Sit back and watch' : myVote ? '✓ Vote locked — tap another to change' : 'No vote yet'}
         </p>
       </div>
     </div>

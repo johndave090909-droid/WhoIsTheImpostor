@@ -97,7 +97,7 @@ function BoothApp() {
   } else if (status === 'lobby') {
     screen = <LobbyScreen roomCode={room} players={players} round={round} scores={scores} onStart={() => Game.setStatus(room, 'setup')} onKick={(uid) => { if (window.confirm('Remove this player from the game?')) Game.kick(room, uid); }} onRole={(uid, role) => Game.setRole(room, uid, role)} onSignOut={() => window.fb.signOutUser()} onEndGame={endGame} />;
   } else if (status === 'setup') {
-    screen = <SetupScreen roomCode={room} players={players} tracks={tracks} round={round} draft={draft} setDraft={setDraft} onBack={() => Game.setStatus(room, 'lobby')} onStart={() => Game.startRound(room, draft, players, tracks)} onUpload={upload} />;
+    screen = <SetupScreen roomCode={room} players={players} tracks={tracks} round={round} draft={draft} setDraft={setDraft} voting={Game.votingConfig(ps)} onVoting={(v) => Game.setVoting(room, v)} onBack={() => Game.setStatus(room, 'lobby')} onStart={() => Game.startRound(room, draft, players, tracks)} onUpload={upload} />;
   } else if (status === 'live') {
     screen = <LiveScreen room={room} players={players} tracks={tracks} round={round} draft={liveDraft} ps={ps} votes={votes} ready={state.ready || {}} assignments={state.assignments || {}} onReveal={() => Game.tallyAndReveal(room)} onEndGame={endGame} />;
   } else if (status === 'reveal') {
