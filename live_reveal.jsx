@@ -210,7 +210,8 @@ function StreamCard({ label, accent, t, count, playing }) {
 }
 
 /* ════════════════════ REVEAL ════════════════════ */
-function RevealScreen({ players, tracks, round, result, streaks, onNext, onScores }) {
+function RevealScreen({ players, tracks, round, result, streaks, scores, onNext, onScores }) {
+  scores = scores || {};
   const [shown, setShown] = useState(false);
   useEffect(() => { const id = setTimeout(() => setShown(true), 700); return () => clearTimeout(id); }, []);
 
@@ -277,18 +278,23 @@ function RevealScreen({ players, tracks, round, result, streaks, onNext, onScore
             </p>}
           </div>
 
-          <SectionLabel accent="var(--lime)">Points this round</SectionLabel>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 12px' }}>
+            <SectionLabel accent="var(--lime)">Points</SectionLabel>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--faint)' }}>this round · total</span>
+          </div>
           <div className="card" style={{ padding: '12px 16px' }}>
             {live.map((p, i) => {
               const d = deltas[p.id] || 0;
               const isImp = p.id === result.impostorUid;
               const streak = (result.streaks && result.streaks[p.id]) || 0;
+              const total = scores[p.id] || 0;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < live.length-1 ? '1px solid var(--line)' : 'none' }}>
                   <Avatar p={p} size={26} />
                   <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: isImp?'var(--magenta)':'var(--ink)' }}>{p.name}{isImp?' · impostor':''}</span>
                   {!isImp && streak > 1 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--amber)' }}>🔥{streak}</span>}
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: d > 0 ? 'var(--lime)' : 'var(--faint)' }}>{d > 0 ? `+${d}` : '—'}</span>
+                  <span style={{ width: 34, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: d > 0 ? 'var(--lime)' : 'var(--faint)' }}>{d > 0 ? `+${d}` : '—'}</span>
+                  <span style={{ width: 36, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 14, fontWeight: 700, color: 'var(--ink)' }}>{total}</span>
                 </div>
               );
             })}

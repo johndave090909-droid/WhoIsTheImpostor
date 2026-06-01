@@ -101,7 +101,7 @@ function BoothApp() {
   } else if (status === 'live') {
     screen = <LiveScreen room={room} players={players} tracks={tracks} round={round} draft={liveDraft} ps={ps} votes={votes} ready={state.ready || {}} assignments={state.assignments || {}} onReveal={() => Game.tallyAndReveal(room)} onEndGame={endGame} />;
   } else if (status === 'reveal') {
-    screen = <RevealScreen players={players} tracks={tracks} round={round} result={results[round]} streaks={streaks} onNext={() => { setDraft({ common: null, impostor: null, impostorId: null }); Game.nextRound(room); }} onScores={() => setPeekScores(true)} />;
+    screen = <RevealScreen players={players} tracks={tracks} round={round} result={results[round]} streaks={streaks} scores={scores} onNext={() => { setDraft({ common: null, impostor: null, impostorId: null }); Game.nextRound(room); }} onScores={() => setPeekScores(true)} />;
   } else {
     screen = <ScoreboardScreen players={players} round={round} scores={scores} completed={Object.keys(results).length} onBack={() => Game.setStatus(room, 'lobby')} />;
   }

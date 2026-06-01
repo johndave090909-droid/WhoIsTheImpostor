@@ -346,7 +346,7 @@ function PlayerApp() {
   } else if (status === 'live') {
     view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} amPlaying={amPlaying} canVote={Game.canVote(ps, players[uid])} hasTrack={!!(assign && assign.url)} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
   } else if (status === 'reveal') {
-    view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} onBoard={() => setShowBoard(true)} onLeave={leave} />;
+    view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} total={scores[uid] || 0} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else {
     view = <PlayScoresView uid={uid} players={players} scores={scores} />;
   }
@@ -554,7 +554,7 @@ function PlayLiveView({ me, ps, players, uid, amPlaying, canVote, hasTrack, assi
 }
 
 /* ════════════ REVEAL (player) ════════════ */
-function PlayRevealView({ uid, players, result, myVote, onBoard, onLeave }) {
+function PlayRevealView({ uid, players, result, myVote, total, onBoard, onLeave }) {
   if (!result) {
     return <div className="screen"><div className="screen__scroll" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ fontFamily: 'var(--font-mono)', color: 'var(--faint)' }}>Tallying…</p></div></div>;
   }
@@ -582,6 +582,9 @@ function PlayRevealView({ uid, players, result, myVote, onBoard, onLeave }) {
           <p style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 16, color: 'var(--ink)', margin: 0 }}>{verdict}</p>
           <div className="h-display" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 34, marginTop: 10, color: delta > 0 ? 'var(--lime)' : 'var(--faint)' }}>
             {delta > 0 ? `+${delta}` : '+0'} <span style={{ fontSize: 14, color: 'var(--faint)' }}>pts</span>
+          </div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
+            {total} total
           </div>
         </div>
         {onBoard && (
