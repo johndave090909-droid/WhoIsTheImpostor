@@ -208,14 +208,14 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
         {/* track library — filtered to the active slot */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 12px' }}>
           <SectionLabel accent={target === 'crowd' ? 'var(--cyan)' : 'var(--magenta)'}>
-            {target === 'crowd' ? 'Crowd' : 'Impostor'} tracks · {trackList.length}
+            {target === 'crowd' ? 'Crowd' : 'Impostor'} tracks · {trackList.length}{trackList.length > 5 ? ' · scroll ↕' : ''}
           </SectionLabel>
           <button className="chip" style={{ cursor: 'pointer', color: 'var(--violet)' }} onClick={() => fileRef.current && fileRef.current.click()} disabled={uploadPct !== null}>
             <Icon.share s={13} c="var(--violet)"/> {uploadPct !== null ? `Uploading ${uploadPct}%` : 'Upload'}
           </button>
           <input ref={fileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={onFile} />
         </div>
-        <div className="card" style={{ overflow: 'hidden', marginBottom: 24 }}>
+        <div className="card track-scroll" style={{ overflowY: 'auto', overflowX: 'hidden', maxHeight: 290, marginBottom: 24, WebkitOverflowScrolling: 'touch' }}>
           {trackList.length === 0 && (
             <div style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 12.5 }}>
               No {target} tracks yet — tap <span style={{ color: 'var(--violet)' }}>Upload</span> to add one, or set an existing track to <span style={{ color: target === 'crowd' ? 'var(--cyan)' : 'var(--magenta)' }}>{target}</span> / Both below.

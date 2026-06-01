@@ -88,6 +88,10 @@ html, body {
 }
 .screen__scroll::-webkit-scrollbar { display: none; }
 
+/* scrollable track list — capped height, hidden scrollbar */
+.track-scroll { scrollbar-width: none; }
+.track-scroll::-webkit-scrollbar { display: none; }
+
 /* sticky footer action area */
 .dock {
   position: absolute;
