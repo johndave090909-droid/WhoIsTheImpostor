@@ -77,6 +77,12 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
               <span className="eyebrow" style={{ color: allReady ? 'var(--lime)' : 'var(--cyan)' }}>
                 {allReady ? '✓ Everyone loaded — press play' : `Loading headsets · ${armedCount}/${needers.length}`}
               </span>
+              {needers.length > 0 && (
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--faint)' }}>
+                  <span style={{ color: 'var(--lime)' }}>{needers.filter(p => window.IMP.isPlaying(p) && ready[p.id] && ready[p.id].armed).length}/{needers.filter(p => window.IMP.isPlaying(p)).length} players</span>
+                  {needers.some(p => !window.IMP.isPlaying(p)) && <span> · <span style={{ color: 'var(--violet)' }}>{needers.filter(p => !window.IMP.isPlaying(p) && ready[p.id] && ready[p.id].armed).length}/{needers.filter(p => !window.IMP.isPlaying(p)).length} audience</span></span>}
+                </span>
+              )}
             </div>
             {needers.length === 0 && (
               <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--faint)', margin: 0 }}>Waiting for phones to receive their track…</p>
@@ -85,10 +91,15 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
               const r = ready[p.id] || {};
               const done = !!r.armed;
               const barPct = done ? 100 : (r.pct || 0);
+              const isAud = !window.IMP.isPlaying(p);
+              const roleColor = isAud ? 'var(--violet)' : 'var(--lime)';
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
-                  <Avatar p={p} size={24} />
-                  <span style={{ width: 58, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                  <Avatar p={p} size={24} dim={isAud} />
+                  <span style={{ width: 58, display: 'flex', alignItems: 'center', gap: 4, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                    <span title={isAud ? 'Audience' : 'Playing'} style={{ width: 5, height: 5, borderRadius: '50%', background: roleColor, boxShadow: `0 0 5px ${roleColor}`, flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                  </span>
                   <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'var(--surface-3)', overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${barPct}%`, borderRadius: 999, background: done ? 'var(--lime)' : 'var(--cyan)', transition: 'width .2s linear' }} />
                   </div>
