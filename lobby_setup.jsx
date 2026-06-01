@@ -127,6 +127,13 @@ function PlayerCell({ p, score, delay, onKick, onRole }) {
   );
 }
 
+/* map any stored tag (incl. legacy crowd/impostor/both) to a tempo */
+function normalizeTempo(tag) {
+  if (tag === 'fast' || tag === 'slow') return tag;
+  if (tag === 'impostor') return 'slow';   // legacy
+  return 'fast';                            // crowd / both / missing → fast
+}
+
 /* ════════════════════ SETUP ════════════════════ */
 function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting, onVoting, onBack, onStart, onUpload, onTag, onDeleteTrack }) {
   voting = voting || { players: true, audience: true };
@@ -134,7 +141,8 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
   const [previewId, setPreviewId] = useState(null);   // which track is auditioning
-  const [tagConfirm, setTagConfirm] = useState(null); // { track, tag } pending role change
+  const [tempoFilter, setTempoFilter] = useState('all'); // 'all' | 'fast' | 'slow'
+  const [tagConfirm, setTagConfirm] = useState(null); // { track, tempo } pending tempo change
   const fileRef = useRef(null);
   const previewRef = useRef(null);
 
@@ -161,9 +169,10 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
   useEffect(() => () => { if (previewRef.current) previewRef.current.pause(); }, []);
   const live = playingList(players);   // only playing members can be the impostor
   const allTracks = toList(tracks);
-  // a track suits the active slot if it's tagged for that slot or "both" (default)
-  const suitsSlot = (t, slot) => { const tag = t.tag || 'both'; return tag === 'both' || tag === slot; };
-  const trackList = allTracks.filter(t => suitsSlot(t, target));
+  // tracks carry a tempo tag (fast | slow); chips filter the list by tempo.
+  // Legacy tags map: crowd→fast, impostor→slow, both→fast.
+  const tempoOf = (t) => normalizeTempo(t.tag);
+  const trackList = tempoFilter === 'all' ? allTracks : allTracks.filter(t => tempoOf(t) === tempoFilter);
   const impostorConnected = live.some(p => p.id === draft.impostorId);
   const someoneCanVote = voting.players || voting.audience;
   const ready = draft.common && draft.impostor && draft.impostorId && impostorConnected && someoneCanVote;
@@ -204,8 +213,8 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
     let dur = '';
     try { dur = await readDuration(file); } catch (_) {}
     try {
-      // new uploads default to the slot you're currently filling
-      await onUpload(file, { dur, tag: target, onProgress: (p) => setUploadPct(Math.round(p * 100)) });
+      // new uploads default to Fast
+      await onUpload(file, { dur, tag: 'fast', onProgress: (p) => setUploadPct(Math.round(p * 100)) });
     } catch (err) {
       window.fb.showBanner('Upload failed: ' + (err && err.message));
     }
@@ -230,27 +239,47 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
           Tap a slot, then pick a track below
         </p>
 
-        {/* track library — filtered to the active slot */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 12px' }}>
-          <SectionLabel accent={target === 'crowd' ? 'var(--cyan)' : 'var(--magenta)'}>
-            {target === 'crowd' ? 'Crowd' : 'Impostor'} tracks · {trackList.length}{trackList.length > 5 ? ' · scroll ↕' : ''}
+        {/* track library — tempo-filtered */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 10px' }}>
+          <SectionLabel accent="var(--violet)">
+            Library · {trackList.length}{trackList.length > 5 ? ' · scroll ↕' : ''}
           </SectionLabel>
           <button className="chip" style={{ cursor: 'pointer', color: 'var(--violet)' }} onClick={() => fileRef.current && fileRef.current.click()} disabled={uploadPct !== null}>
             <Icon.share s={13} c="var(--violet)"/> {uploadPct !== null ? `Uploading ${uploadPct}%` : 'Upload'}
           </button>
           <input ref={fileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={onFile} />
         </div>
+        {/* tempo filter chips */}
+        <div style={{ display: 'flex', gap: 8, margin: '0 4px 12px' }}>
+          {[
+            { k: 'all',  label: 'All',  c: 'var(--violet)' },
+            { k: 'fast', label: '⚡ Fast', c: 'var(--amber)' },
+            { k: 'slow', label: '🌙 Slow', c: 'var(--cyan)' },
+          ].map(f => {
+            const on = tempoFilter === f.k;
+            return (
+              <button key={f.k} onClick={() => setTempoFilter(f.k)} className="chip" style={{
+                cursor: 'pointer', color: on ? '#0A0410' : f.c,
+                background: on ? f.c : 'var(--surface-2)',
+                boxShadow: on ? `0 0 12px ${f.c}55` : '0 0 0 1px var(--line) inset',
+                fontWeight: 700,
+              }}>{f.label}</button>
+            );
+          })}
+        </div>
         <div className="card track-scroll" style={{ overflowY: 'auto', overflowX: 'hidden', maxHeight: 290, marginBottom: 24, WebkitOverflowScrolling: 'touch' }}>
           {trackList.length === 0 && (
             <div style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 12.5 }}>
-              No {target} tracks yet — tap <span style={{ color: 'var(--violet)' }}>Upload</span> to add one, or set an existing track to <span style={{ color: target === 'crowd' ? 'var(--cyan)' : 'var(--magenta)' }}>{target}</span> / Both below.
+              {tempoFilter === 'all'
+                ? <>No tracks yet — tap <span style={{ color: 'var(--violet)' }}>Upload</span> to add audio from this device.</>
+                : <>No {tempoFilter} tracks — switch the filter or retag a track below.</>}
             </div>
           )}
           {trackList.map((t, i) => {
             const isCrowd = draft.common === t.id;
             const isImp = draft.impostor === t.id;
             const sel = isCrowd ? { t: 'CROWD', c: 'var(--cyan)' } : isImp ? { t: 'IMPOSTOR', c: 'var(--magenta)' } : null;
-            const ttag = t.tag || 'both';
+            const tempo = tempoOf(t);
             return (
               <div key={t.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
@@ -270,9 +299,8 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
                     <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.file}</div>
                   </div>
                 </button>
-                {sel
-                  ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: sel.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${sel.c}55 inset`, flexShrink: 0 }}>{sel.t}</span>
-                  : <TagPicker tag={ttag} onSet={(g) => { if (g !== ttag) setTagConfirm({ track: t, tag: g }); }} />}
+                {sel && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: sel.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${sel.c}55 inset`, flexShrink: 0 }}>{sel.t}</span>}
+                <TempoPicker tempo={tempo} onSet={(g) => { if (g !== tempo) setTagConfirm({ track: t, tempo: g }); }} />
                 {onDeleteTrack && (
                   <button onClick={(e) => { e.stopPropagation(); deleteTrack(t); }} title="Delete track" style={{
                     border: 'none', cursor: 'pointer', background: 'var(--surface-3)',
@@ -329,26 +357,25 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
       {/* booth-only preview player (audible on the operator device only) */}
       <audio ref={previewRef} preload="none" />
 
-      {/* confirm a track role change */}
+      {/* confirm a track tempo change */}
       {(() => {
         const meta = {
-          crowd:    { label: 'Crowd',    accent: 'var(--cyan)',    desc: 'only available for the crowd slot' },
-          impostor: { label: 'Impostor', accent: 'var(--magenta)', desc: 'only available for the impostor slot' },
-          both:     { label: 'Both',     accent: 'var(--violet)',  desc: 'available for either slot' },
+          fast: { label: '⚡ Fast', accent: 'var(--amber)' },
+          slow: { label: '🌙 Slow', accent: 'var(--cyan)' },
         };
-        const m = tagConfirm ? meta[tagConfirm.tag] : null;
+        const m = tagConfirm ? meta[tagConfirm.tempo] : null;
         return (
           <Modal
             open={!!tagConfirm}
-            title="Change track role?"
+            title="Change track tempo?"
             accent={m ? m.accent : 'var(--violet)'}
             confirmLabel={m ? `Set ${m.label}` : 'Confirm'}
             onCancel={() => setTagConfirm(null)}
-            onConfirm={() => { onTag(tagConfirm.track.id, tagConfirm.tag); setTagConfirm(null); }}
+            onConfirm={() => { onTag(tagConfirm.track.id, tagConfirm.tempo); setTagConfirm(null); }}
           >
             {tagConfirm && m && <>
-              Set <strong style={{ color: 'var(--ink)' }}>{tagConfirm.track.title}</strong> to{' '}
-              <strong style={{ color: m.accent }}>{m.label}</strong> — it&apos;ll be {m.desc}.
+              Mark <strong style={{ color: 'var(--ink)' }}>{tagConfirm.track.title}</strong> as{' '}
+              <strong style={{ color: m.accent }}>{m.label}</strong>?
             </>}
           </Modal>
         );
@@ -357,23 +384,22 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
   );
 }
 
-// compact 3-way role tag for a library track: Crowd / Imp / Both
-function TagPicker({ tag, onSet }) {
+// tempo tag for a library track: Fast / Slow
+function TempoPicker({ tempo, onSet }) {
   const opts = [
-    { k: 'crowd', t: 'C', c: 'var(--cyan)', title: 'Crowd only' },
-    { k: 'impostor', t: 'I', c: 'var(--magenta)', title: 'Impostor only' },
-    { k: 'both', t: 'B', c: 'var(--violet)', title: 'Both slots' },
+    { k: 'fast', t: '⚡', c: 'var(--amber)', title: 'Fast' },
+    { k: 'slow', t: '🌙', c: 'var(--cyan)', title: 'Slow' },
   ];
   return (
     <div style={{ display: 'flex', gap: 3, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
       {opts.map(o => {
-        const on = tag === o.k;
+        const on = tempo === o.k;
         return (
           <button key={o.k} title={o.title} onClick={() => onSet(o.k)} style={{
-            width: 24, height: 24, borderRadius: 7, cursor: 'pointer', border: 'none',
-            fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
+            width: 26, height: 26, borderRadius: 7, cursor: 'pointer', border: 'none',
+            fontSize: 13, lineHeight: 1,
             background: on ? o.c : 'var(--surface-3)',
-            color: on ? '#0A0410' : 'var(--faint)',
+            filter: on ? 'none' : 'grayscale(1) opacity(0.6)',
             boxShadow: on ? `0 0 8px ${o.c}66` : '0 0 0 1px var(--line) inset',
           }}>{o.t}</button>
         );
