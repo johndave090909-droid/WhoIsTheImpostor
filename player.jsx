@@ -344,7 +344,7 @@ function PlayerApp() {
   } else if (!ps || status === 'lobby' || status === 'setup') {
     view = <WaitView me={me} room={room} count={window.IMP.connectedList(players).length} status={status} amPlaying={amPlaying} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else if (status === 'live') {
-    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} amPlaying={amPlaying} canVote={Game.canVote(ps, players[uid])} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
+    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} amPlaying={amPlaying} canVote={Game.canVote(ps, players[uid])} hasTrack={!!(assign && assign.url)} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
   } else if (status === 'reveal') {
     view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else {
@@ -430,15 +430,16 @@ function WaitView({ me, room, count, status, amPlaying, onBoard, onLeave }) {
 }
 
 /* ════════════ LIVE (player) ════════════ */
-function PlayLiveView({ me, ps, players, uid, amPlaying, canVote, assignReady, loadPct, started, onStart, myVote, onVote }) {
+function PlayLiveView({ me, ps, players, uid, amPlaying, canVote, hasTrack, assignReady, loadPct, started, onStart, myVote, onVote }) {
   const remaining = Game.timerRemaining(ps.timer);
   const playing = !!(ps.audio && ps.audio.playing);
   // you can only accuse someone who's actually playing this round
   const others = window.IMP.playingList(players).filter((p) => p.id !== uid);
 
-  // Everyone (players AND audience) hears a track now, so everyone arms their
-  // headset first. Audience hears the crowd track; the impostor hears theirs.
-  if (!started) {
+  // Everyone with an assigned track arms their headset first. If the booth gave
+  // this member no track (e.g. a late joiner, or an older booth build), don't
+  // hard-block on a download that will never arrive — let them watch and guess.
+  if (!started && hasTrack) {
     return (
       <div className="screen">
         <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 10 }}>
@@ -453,6 +454,24 @@ function PlayLiveView({ me, ps, players, uid, amPlaying, canVote, assignReady, l
         <div className="dock">
           <button className="btn btn--primary" disabled={!assignReady} onClick={onStart}>
             <Icon.head c="#0A0410" /> {assignReady ? "I'm ready" : `Downloading… ${loadPct || 0}%`}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!started && !hasTrack) {
+    return (
+      <div className="screen">
+        <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 10 }}>
+          <Icon.eye s={60} c="var(--violet)" />
+          <h1 className="h-display" style={{ fontSize: 28, margin: '10px 0 2px' }}>WATCH &amp;<br/>GUESS</h1>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--faint)', maxWidth: 250 }}>
+            No track for you this round — watch the players and lock your guess.
+          </p>
+        </div>
+        <div className="dock">
+          <button className="btn btn--primary" onClick={onStart}>
+            <Icon.eye c="#0A0410" /> I&apos;m watching
           </button>
         </div>
       </div>
@@ -477,18 +496,18 @@ function PlayLiveView({ me, ps, players, uid, amPlaying, canVote, assignReady, l
           <div style={{ position: 'absolute', inset: 0, background: amPlaying ? 'radial-gradient(100% 100% at 50% 0%, rgba(37,230,255,0.16), transparent 65%)' : 'radial-gradient(100% 100% at 50% 0%, rgba(154,107,255,0.16), transparent 65%)' }} />
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             <div className="breathe" style={{ width: 84, height: 84, borderRadius: 20, background: `linear-gradient(135deg, ${me.c1}, ${me.c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ transform: 'scale(1.6)' }}><Eq color="#0A0410" bars={4} playing={playing} /></div>
+              <div style={{ transform: 'scale(1.6)' }}><Eq color="#0A0410" bars={4} playing={hasTrack && playing} /></div>
             </div>
             <div>
-              {amPlaying ? (
+              {hasTrack ? (
                 <>
                   <p className="eyebrow">{playing ? 'Now playing in your ears' : 'Paused by the booth'}</p>
-                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>Listen closely 🎧</p>
+                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>{amPlaying ? 'Listen closely 🎧' : 'Listen & guess 🎧'}</p>
                 </>
               ) : (
                 <>
-                  <p className="eyebrow">{playing ? 'Now playing in your ears' : 'Paused by the booth'}</p>
-                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>Listen &amp; guess 🎧</p>
+                  <p className="eyebrow">You&apos;re in the audience</p>
+                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>Watch &amp; guess 👀</p>
                 </>
               )}
             </div>

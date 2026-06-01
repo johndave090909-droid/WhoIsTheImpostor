@@ -17,6 +17,14 @@
     ],
     "rewrites": [
       { "source": "/booth", "destination": "/booth.html" }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|js|jsx|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        ]
+      }
     ]
   },
   "emulators": {
