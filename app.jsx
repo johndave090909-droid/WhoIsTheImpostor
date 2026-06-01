@@ -1,6 +1,40 @@
 // Booth (operator) root — drives the room over Firebase.
 const { useState: useAppState, useEffect: useAppEffect } = React;
 
+/* Operator runs on phones AND desktops. On a wide screen we drop the iOS
+   phone frame for a roomier "app window" panel; the screens fill it the same
+   way (they're position:absolute inset:0), so no screen needs rewriting. */
+function useIsDesktop() {
+  const q = '(min-width: 860px)';
+  const [desktop, setDesktop] = useAppState(() =>
+    typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false
+  );
+  useAppEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia(q);
+    const on = () => setDesktop(mq.matches);
+    mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); };
+  }, []);
+  return desktop;
+}
+
+function Shell({ children }) {
+  const desktop = useIsDesktop();
+  if (desktop) {
+    return (
+      <div className="stage">
+        <div className="booth-desktop">{children}</div>
+      </div>
+    );
+  }
+  return (
+    <div className="stage">
+      <IOSDevice dark width={390} height={844}>{children}</IOSDevice>
+    </div>
+  );
+}
+
 function Splash({ msg }) {
   return (
     <div className="screen">
@@ -55,7 +89,7 @@ function BoothApp() {
   }, []);
 
   if (!room) {
-    return <div className="stage"><IOSDevice dark width={390} height={844}><Splash /></IOSDevice></div>;
+    return <Shell><Splash /></Shell>;
   }
 
   const ps = state.publicState || {};
@@ -106,11 +140,7 @@ function BoothApp() {
     screen = <ScoreboardScreen players={players} round={round} scores={scores} completed={Object.keys(results).length} onBack={() => Game.setStatus(room, 'lobby')} />;
   }
 
-  return (
-    <div className="stage">
-      <IOSDevice dark width={390} height={844}>{screen}</IOSDevice>
-    </div>
-  );
+  return <Shell>{screen}</Shell>;
 }
 
 /* ════════════════════ OPERATOR LOGIN ════════════════════ */
@@ -155,7 +185,7 @@ function LoginScreen() {
   };
 
   return (
-    <div className="stage"><IOSDevice><div className="screen">
+    <Shell><div className="screen">
       <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingTop: 60 }}>
         <p className="eyebrow" style={{ color: 'var(--magenta)', textAlign: 'center' }}>● Operator booth</p>
         <h1 className="h-display" style={{ fontSize: 34, textAlign: 'center', margin: '8px 0 4px' }}>
@@ -194,7 +224,7 @@ function LoginScreen() {
           <Icon.head c="var(--ink)" /> Join a game as a player
         </button>
       </div>
-    </div></IOSDevice></div>
+    </div></Shell>
   );
 }
 
@@ -206,7 +236,7 @@ function BoothRoot() {
     setUser(u || null);
   }), []);
 
-  if (user === undefined) return <div className="stage"><IOSDevice><Splash msg="Loading…" /></IOSDevice></div>;
+  if (user === undefined) return <Shell><Splash msg="Loading…" /></Shell>;
   if (!user) return <LoginScreen />;
   return <BoothApp user={user} />;
 }

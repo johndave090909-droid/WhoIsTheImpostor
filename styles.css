@@ -67,6 +67,38 @@ html, body {
   overflow: hidden;
 }
 
+/* ── desktop operator window — roomy panel instead of the phone bezel ── */
+.booth-desktop {
+  position: relative;
+  width: min(960px, 94vw);
+  height: min(860px, 92vh);
+  border-radius: 28px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--line) inset,
+    0 40px 120px rgba(0,0,0,0.6),
+    0 0 70px rgba(154,107,255,0.18);
+}
+/* widen the inner scroll padding + cap content width so the booth screens
+   read like a desktop app, not a stretched phone */
+.booth-desktop .screen__scroll {
+  padding: 34px clamp(20px, 6%, 64px) 130px;
+}
+.booth-desktop .screen__scroll > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.booth-desktop .dock {
+  padding: 18px clamp(20px, 6%, 64px) 26px;
+}
+.booth-desktop .dock > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* ── the screen surface (fills .device) ── */
 .screen {
   position: absolute;
