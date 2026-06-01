@@ -249,9 +249,16 @@
       c1: colors.c1,
       c2: colors.c2,
       path,
+      // which slot this track suits: "crowd" | "impostor" | "both"
+      tag: (meta && meta.tag) || "both",
     };
     await db().ref("library/" + key).set(entry);
     return Object.assign({ id: key }, entry);
+  }
+
+  // host: retag a library track ("crowd" | "impostor" | "both")
+  function setTrackTag(trackId, tag) {
+    return db().ref("library/" + trackId + "/tag").set(tag);
   }
 
   // Pull in any audio already sitting in the Storage library/ folder that
@@ -500,6 +507,7 @@
     votingConfig,
     canVote,
     uploadTrack,
+    setTrackTag,
     watchLibrary,
     reconcileLibrary,
     startRound,

@@ -128,14 +128,17 @@ function PlayerCell({ p, score, delay, onKick, onRole }) {
 }
 
 /* ════════════════════ SETUP ════════════════════ */
-function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting, onVoting, onBack, onStart, onUpload }) {
+function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting, onVoting, onBack, onStart, onUpload, onTag }) {
   voting = voting || { players: true, audience: true };
   const audienceCount = audienceList(players).length;
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
   const fileRef = useRef(null);
   const live = playingList(players);   // only playing members can be the impostor
-  const trackList = toList(tracks);
+  const allTracks = toList(tracks);
+  // a track suits the active slot if it's tagged for that slot or "both" (default)
+  const suitsSlot = (t, slot) => { const tag = t.tag || 'both'; return tag === 'both' || tag === slot; };
+  const trackList = allTracks.filter(t => suitsSlot(t, target));
   const impostorConnected = live.some(p => p.id === draft.impostorId);
   const someoneCanVote = voting.players || voting.audience;
   const ready = draft.common && draft.impostor && draft.impostorId && impostorConnected && someoneCanVote;
@@ -166,7 +169,8 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
     let dur = '';
     try { dur = await readDuration(file); } catch (_) {}
     try {
-      await onUpload(file, { dur, onProgress: (p) => setUploadPct(Math.round(p * 100)) });
+      // new uploads default to the slot you're currently filling
+      await onUpload(file, { dur, tag: target, onProgress: (p) => setUploadPct(Math.round(p * 100)) });
     } catch (err) {
       window.fb.showBanner('Upload failed: ' + (err && err.message));
     }
@@ -191,9 +195,11 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
           Tap a slot, then pick a track below
         </p>
 
-        {/* track library */}
+        {/* track library — filtered to the active slot */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 12px' }}>
-          <SectionLabel accent="var(--violet)">Your library · {trackList.length} tracks</SectionLabel>
+          <SectionLabel accent={target === 'crowd' ? 'var(--cyan)' : 'var(--magenta)'}>
+            {target === 'crowd' ? 'Crowd' : 'Impostor'} tracks · {trackList.length}
+          </SectionLabel>
           <button className="chip" style={{ cursor: 'pointer', color: 'var(--violet)' }} onClick={() => fileRef.current && fileRef.current.click()} disabled={uploadPct !== null}>
             <Icon.share s={13} c="var(--violet)"/> {uploadPct !== null ? `Uploading ${uploadPct}%` : 'Upload'}
           </button>
@@ -202,30 +208,32 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
         <div className="card" style={{ overflow: 'hidden', marginBottom: 24 }}>
           {trackList.length === 0 && (
             <div style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 12.5 }}>
-              No tracks yet — tap <span style={{ color: 'var(--violet)' }}>Upload</span> to add audio from this device.
+              No {target} tracks yet — tap <span style={{ color: 'var(--violet)' }}>Upload</span> to add one, or set an existing track to <span style={{ color: target === 'crowd' ? 'var(--cyan)' : 'var(--magenta)' }}>{target}</span> / Both below.
             </div>
           )}
           {trackList.map((t, i) => {
             const isCrowd = draft.common === t.id;
             const isImp = draft.impostor === t.id;
-            const tag = isCrowd ? { t: 'CROWD', c: 'var(--cyan)' } : isImp ? { t: 'IMPOSTOR', c: 'var(--magenta)' } : null;
+            const sel = isCrowd ? { t: 'CROWD', c: 'var(--cyan)' } : isImp ? { t: 'IMPOSTOR', c: 'var(--magenta)' } : null;
+            const ttag = t.tag || 'both';
             return (
-              <button key={t.id} onClick={() => pickTrack(t)} style={{
-                width: '100%', border: 'none', cursor: 'pointer', textAlign: 'left',
+              <div key={t.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
-                background: tag ? `${tag.c}14` : 'transparent',
+                background: sel ? `${sel.c}14` : 'transparent',
                 borderBottom: i < trackList.length-1 ? '1px solid var(--line)' : 'none',
-                boxShadow: tag ? `inset 3px 0 0 ${tag.c}` : 'none',
+                boxShadow: sel ? `inset 3px 0 0 ${sel.c}` : 'none',
               }}>
-                <Cover t={t} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.file}</div>
-                </div>
-                {tag
-                  ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: tag.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${tag.c}55 inset` }}>{tag.t}</span>
-                  : <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--faint)' }}>{t.dur}</span>}
-              </button>
+                <button onClick={() => pickTrack(t)} style={{ flex: 1, minWidth: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, padding: 0 }}>
+                  <Cover t={t} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.file}</div>
+                  </div>
+                </button>
+                {sel
+                  ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: sel.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${sel.c}55 inset`, flexShrink: 0 }}>{sel.t}</span>
+                  : <TagPicker tag={ttag} onSet={(g) => onTag(t.id, g)} />}
+              </div>
             );
           })}
         </div>
@@ -269,6 +277,31 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
           <Icon.bolt c="#0A0410"/> Start round
         </button>
       </div>
+    </div>
+  );
+}
+
+// compact 3-way role tag for a library track: Crowd / Imp / Both
+function TagPicker({ tag, onSet }) {
+  const opts = [
+    { k: 'crowd', t: 'C', c: 'var(--cyan)', title: 'Crowd only' },
+    { k: 'impostor', t: 'I', c: 'var(--magenta)', title: 'Impostor only' },
+    { k: 'both', t: 'B', c: 'var(--violet)', title: 'Both slots' },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 3, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+      {opts.map(o => {
+        const on = tag === o.k;
+        return (
+          <button key={o.k} title={o.title} onClick={() => onSet(o.k)} style={{
+            width: 24, height: 24, borderRadius: 7, cursor: 'pointer', border: 'none',
+            fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
+            background: on ? o.c : 'var(--surface-3)',
+            color: on ? '#0A0410' : 'var(--faint)',
+            boxShadow: on ? `0 0 8px ${o.c}66` : '0 0 0 1px var(--line) inset',
+          }}>{o.t}</button>
+        );
+      })}
     </div>
   );
 }
