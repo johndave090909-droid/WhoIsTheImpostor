@@ -1,0 +1,52 @@
+{
+  "rules": {
+    "rooms": {
+      "$room": {
+        ".read": "auth != null && root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() ? newData.child('hostUid').val() === auth.uid : data.child('hostUid').val() === auth.uid)"
+        },
+        "publicState": {
+          ".read": "auth != null",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+        },
+        "players": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth.uid === $uid || root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+          }
+        },
+        "tracks": {
+          ".read": "auth != null",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+        },
+        "round": {
+          ".read": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+        },
+        "assignments": {
+          "$uid": {
+            ".read": "auth.uid === $uid || root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
+            ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+          }
+        },
+        "votes": {
+          ".read": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
+          "$uid": {
+            ".read": "auth.uid === $uid",
+            ".write": "auth.uid === $uid && root.child('rooms/'+$room+'/publicState/status').val() === 'live'"
+          }
+        },
+        "results": {
+          ".read": "auth != null",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+        },
+        "scores": {
+          ".read": "auth != null",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+        }
+      }
+    }
+  }
+}

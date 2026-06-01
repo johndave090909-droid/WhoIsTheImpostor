@@ -1,25 +1,25 @@
-// Live round + Reveal + Scoreboard screens
-const TRACKS_LR = window.IMP.TRACKS;
-const fmt = (s) => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-const trackBy = (id) => TRACKS_LR.find(t => t.id === id);
+// Live round + Reveal + Scoreboard screens (booth) — live Firebase data
+const fmt = (s) => `${Math.floor(s/60)}:${String(Math.max(0, s)%60).padStart(2,'0')}`;
+const withId = (obj, id) => (obj ? Object.assign({ id }, obj) : null);
 
 /* ════════════════════ LIVE ROUND ════════════════════ */
-function LiveScreen({ players, round, draft, onReveal }) {
-  const [secs, setSecs] = useState(120);
-  const [playing, setPlaying] = useState(true);
-  const [revealView, setRevealView] = useState(true); // operator's secret monitor on/off
-
+function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }) {
+  const [, setTick] = useState(0);
+  const [revealView, setRevealView] = useState(true);
   useEffect(() => {
-    if (!playing || secs <= 0) return;
-    const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
+    const id = setInterval(() => setTick(t => t + 1), 250);
     return () => clearInterval(id);
-  }, [playing, secs]);
+  }, []);
 
-  const live = players.filter(p => p.state === 'connected');
-  const crowd = trackBy(draft.common);
-  const imp = trackBy(draft.impostor);
-  const over = secs <= 0;
-  const pct = (secs / 120) * 100;
+  const live = window.IMP.connectedList(players);
+  const crowd = withId(tracks[draft.common], draft.common);
+  const imp = withId(tracks[draft.impostor], draft.impostor);
+  const playing = !!(ps.audio && ps.audio.playing);
+  const remaining = Game.timerRemaining(ps.timer);
+  const secs = Math.ceil(remaining);
+  const over = remaining <= 0;
+  const pct = (remaining / Game.ROUND_SECS) * 100;
+  const voted = Object.keys(votes || {}).length;
 
   return (
     <div className="screen">
@@ -32,20 +32,19 @@ function LiveScreen({ players, round, draft, onReveal }) {
           <div className="chip"><Icon.head s={13} c="var(--cyan)"/> {live.length} synced</div>
         </div>
 
-        {/* timer ring */}
+        {/* timer */}
         <div className="card" style={{ padding: '24px 20px', marginBottom: 14, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', inset: 0, background: over ? 'radial-gradient(100% 100% at 50% 0%, rgba(255,46,154,0.2), transparent 65%)' : 'radial-gradient(100% 100% at 50% 0%, rgba(154,107,255,0.16), transparent 65%)' }} />
           <div style={{ position: 'relative' }}>
             <p className="eyebrow">{over ? 'Time' : 'Time remaining'}</p>
             <div className="h-display" style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 60, lineHeight: 1, letterSpacing: '0.01em', margin: '6px 0 16px', color: over ? 'var(--magenta)' : 'var(--ink)', textShadow: over ? 'var(--glow-magenta)' : 'none' }}>{fmt(secs)}</div>
-            {/* progress */}
             <div style={{ height: 5, borderRadius: 999, background: 'var(--surface-3)', overflow: 'hidden', marginBottom: 18 }}>
-              <div style={{ height: '100%', width: `${pct}%`, borderRadius: 999, background: 'linear-gradient(90deg, var(--cyan), var(--violet), var(--magenta))', transition: 'width 1s linear' }} />
+              <div style={{ height: '100%', width: `${pct}%`, borderRadius: 999, background: 'linear-gradient(90deg, var(--cyan), var(--violet), var(--magenta))', transition: 'width .25s linear' }} />
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center' }}>
-              <button onClick={() => setSecs(120)} className="ctl"><Icon.sync s={18}/></button>
-              <button onClick={() => setPlaying(p => !p)} className="ctl ctl--play">{playing ? <Icon.pause s={26} c="#0A0410"/> : <Icon.play s={26} c="#0A0410"/>}</button>
-              <button onClick={() => setSecs(s => Math.min(120, s + 30))} className="ctl" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700 }}>+30</button>
+              <button onClick={() => Game.restart(room)} className="ctl"><Icon.sync s={18}/></button>
+              <button onClick={() => Game.toggle(room, playing)} className="ctl ctl--play">{playing ? <Icon.pause s={26} c="#0A0410"/> : <Icon.play s={26} c="#0A0410"/>}</button>
+              <button onClick={() => Game.addTime(room, 30)} className="ctl" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700 }}>+30</button>
             </div>
             <p style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', margin: '16px 0 0' }}>
               {playing ? 'All headsets playing in sync' : 'Paused on every headset'}
@@ -53,9 +52,9 @@ function LiveScreen({ players, round, draft, onReveal }) {
           </div>
         </div>
 
-        {/* now playing — two streams */}
+        {/* two streams */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
-          <StreamCard label="Crowd stream" accent="var(--cyan)" t={crowd} count={live.length - 1} playing={playing} />
+          <StreamCard label="Crowd stream" accent="var(--cyan)" t={crowd} count={Math.max(0, live.length - 1)} playing={playing} />
           <StreamCard label="Impostor stream" accent="var(--magenta)" t={imp} count={1} playing={playing} />
         </div>
 
@@ -71,6 +70,7 @@ function LiveScreen({ players, round, draft, onReveal }) {
           {live.map((p, i) => {
             const isImp = p.id === draft.impostorId;
             const t = isImp ? imp : crowd;
+            const hasVoted = votes && votes[p.id];
             return (
               <div key={p.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
@@ -82,9 +82,10 @@ function LiveScreen({ players, round, draft, onReveal }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>{p.name}</div>
                   {revealView
-                    ? <div style={{ fontSize: 11.5, color: isImp ? 'var(--magenta)' : 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isImp ? '◆ ' : ''}{t.title}</div>
+                    ? <div style={{ fontSize: 11.5, color: isImp ? 'var(--magenta)' : 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{isImp ? '◆ ' : ''}{t ? t.title : '—'}</div>
                     : <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>•••••••••</div>}
                 </div>
+                {hasVoted && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--lime)', padding: '3px 7px', borderRadius: 999, boxShadow: '0 0 0 1px var(--lime) inset' }}>VOTED</span>}
                 {revealView && isImp && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: 'var(--magenta)', padding: '3px 8px', borderRadius: 999, boxShadow: '0 0 0 1px var(--magenta) inset' }}>IMP</span>}
                 <Eq color={revealView && isImp ? 'var(--magenta)' : 'var(--cyan)'} playing={playing} />
               </div>
@@ -95,6 +96,7 @@ function LiveScreen({ players, round, draft, onReveal }) {
       </div>
 
       <div className="dock">
+        <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 11.5, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>{voted}/{live.length} have voted</p>
         <button className="btn btn--danger" onClick={onReveal}><Icon.eye c="#fff"/> Reveal the impostor</button>
       </div>
     </div>
@@ -109,9 +111,9 @@ function StreamCard({ label, accent, t, count, playing }) {
         <Eq color={accent} playing={playing} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <Cover t={t} size={38} />
+        <Cover t={t || { c1: accent, c2: accent }} size={38} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
+          <div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t ? t.title : '—'}</div>
           <div style={{ fontSize: 11, color: 'var(--faint)' }}>{count} {count === 1 ? 'listener' : 'listeners'}</div>
         </div>
       </div>
@@ -120,28 +122,38 @@ function StreamCard({ label, accent, t, count, playing }) {
 }
 
 /* ════════════════════ REVEAL ════════════════════ */
-function RevealScreen({ players, round, draft, result, onNext, onScores }) {
+function RevealScreen({ players, tracks, round, result, onNext, onScores }) {
   const [shown, setShown] = useState(false);
   useEffect(() => { const id = setTimeout(() => setShown(true), 700); return () => clearTimeout(id); }, []);
 
-  const live = players.filter(p => p.state === 'connected');
-  const impP = players.find(p => p.id === draft.impostorId);
-  const crowd = trackBy(draft.common);
-  const imp = trackBy(draft.impostor);
-  const maxVotes = Math.max(...Object.values(result.votes));
+  if (!result) {
+    return (
+      <div className="screen"><div className="screen__scroll" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <p style={{ fontFamily: 'var(--font-mono)', color: 'var(--faint)' }}>Tallying votes…</p>
+      </div></div>
+    );
+  }
+
+  const live = window.IMP.connectedList(players);
+  const impP = withId(players[result.impostorUid], result.impostorUid);
+  const crowd = withId(tracks[result.commonTrackId], result.commonTrackId);
+  const imp = withId(tracks[result.impostorTrackId], result.impostorTrackId);
+  const tally = result.tally || {};
+  const deltas = result.deltas || {};
+  const maxVotes = Math.max(1, ...Object.values(tally));
+  const voted = live.filter(p => tally[p.id]).sort((a, b) => tally[b.id] - tally[a.id]);
 
   return (
     <div className="screen">
       <div className="screen__scroll" style={{ paddingTop: 54 }}>
         <p className="eyebrow" style={{ textAlign: 'center' }}>Round {round} · the reveal</p>
 
-        {/* hero */}
         <div style={{ textAlign: 'center', margin: '18px 0 26px' }}>
           <p className="h-display" style={{ fontSize: 17, color: 'var(--muted)', letterSpacing: '0.04em', marginBottom: 18 }}>THE IMPOSTOR WAS</p>
-          {!shown
+          {!shown || !impP
             ? <div style={{ width: 120, height: 120, borderRadius: '50%', margin: '0 auto', border: '2px dashed var(--line-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--faint)', fontSize: 40, fontFamily: 'var(--font-display)' }}>?</div>
             : <div className="breathe" style={{ width: 'fit-content', margin: '0 auto' }}><Avatar p={impP} size={120} glow /></div>}
-          {shown && <>
+          {shown && impP && <>
             <h1 className="h-display float-up" style={{ fontSize: 46, margin: '18px 0 6px', color: 'var(--magenta)', textShadow: 'var(--glow-magenta)' }}>{impP.name}</h1>
             <div className="float-up" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontFamily: 'var(--font-mono)', fontSize: 13, color: result.caught ? 'var(--cyan)' : 'var(--magenta)', animationDelay: '.1s' }}>
               {result.caught ? '✓ Caught by the crowd' : '✗ Got away with it'}
@@ -150,18 +162,17 @@ function RevealScreen({ players, round, draft, result, onNext, onScores }) {
         </div>
 
         {shown && <div className="float-up" style={{ animationDelay: '.15s' }}>
-          {/* what they heard */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
             <MiniTrack label="Crowd heard" accent="var(--cyan)" t={crowd} />
             <MiniTrack label="Impostor heard" accent="var(--magenta)" t={imp} />
           </div>
 
-          {/* audience votes */}
-          <SectionLabel accent="var(--violet)">Audience votes · {result.voters} watching</SectionLabel>
+          <SectionLabel accent="var(--violet)">Audience votes · {result.voters} cast</SectionLabel>
           <div className="card" style={{ padding: '14px 16px', marginBottom: 22 }}>
-            {live.filter(p => result.votes[p.id]).sort((a,b) => result.votes[b.id]-result.votes[a.id]).map(p => {
-              const v = result.votes[p.id];
-              const isImp = p.id === draft.impostorId;
+            {voted.length === 0 && <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--faint)', textAlign: 'center', margin: 0 }}>No votes were cast.</p>}
+            {voted.map(p => {
+              const v = tally[p.id];
+              const isImp = p.id === result.impostorUid;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <Avatar p={p} size={28} />
@@ -173,20 +184,19 @@ function RevealScreen({ players, round, draft, result, onNext, onScores }) {
                 </div>
               );
             })}
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--cyan)', margin: '6px 0 0', textAlign: 'center' }}>
-              {result.votes[draft.impostorId] || 0} of {result.voters} spotted {impP.name}
-            </p>
+            {impP && <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--cyan)', margin: '6px 0 0', textAlign: 'center' }}>
+              {tally[result.impostorUid] || 0} of {result.voters} spotted {impP.name}
+            </p>}
           </div>
 
-          {/* points */}
           <SectionLabel accent="var(--lime)">Points this round</SectionLabel>
           <div className="card" style={{ padding: '12px 16px' }}>
             {live.map((p, i) => {
-              const d = result.deltas[p.id] || 0;
+              const d = deltas[p.id] || 0;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < live.length-1 ? '1px solid var(--line)' : 'none' }}>
                   <Avatar p={p} size={26} />
-                  <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: p.id===draft.impostorId?'var(--magenta)':'var(--ink)' }}>{p.name}{p.id===draft.impostorId?' · impostor':''}</span>
+                  <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: p.id===result.impostorUid?'var(--magenta)':'var(--ink)' }}>{p.name}{p.id===result.impostorUid?' · impostor':''}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: d > 0 ? 'var(--lime)' : 'var(--faint)' }}>{d > 0 ? `+${d}` : '—'}</span>
                 </div>
               );
@@ -208,10 +218,10 @@ function MiniTrack({ label, accent, t }) {
     <div className="card" style={{ padding: 12, boxShadow: `0 0 0 1px ${accent}33 inset` }}>
       <span className="eyebrow" style={{ color: accent, fontSize: 10 }}>{label}</span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 9 }}>
-        <Cover t={t} size={34} />
+        <Cover t={t || { c1: accent, c2: accent }} size={34} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
-          <div style={{ fontSize: 10.5, color: 'var(--faint)' }}>{t.artist}</div>
+          <div style={{ fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t ? t.title : '—'}</div>
+          <div style={{ fontSize: 10.5, color: 'var(--faint)' }}>{t ? t.artist : ''}</div>
         </div>
       </div>
     </div>
@@ -220,19 +230,26 @@ function MiniTrack({ label, accent, t }) {
 
 /* ════════════════════ SCOREBOARD ════════════════════ */
 function ScoreboardScreen({ players, round, scores, completed, onBack }) {
-  const live = players.filter(p => p.state === 'connected');
-  const ranked = [...live].sort((a,b) => (scores[b.id]||0) - (scores[a.id]||0));
+  const ranked = window.IMP.connectedList(players).sort((a,b) => (scores[b.id]||0) - (scores[a.id]||0));
   const medal = ['var(--amber)', '#C9D2E0', '#E08A4B'];
+
+  if (!ranked.length) {
+    return (
+      <div className="screen"><div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <p style={{ fontFamily: 'var(--font-mono)', color: 'var(--faint)' }}>No players yet.</p>
+        <button className="chip" style={{ cursor: 'pointer' }} onClick={onBack}><Icon.back s={14}/> Back</button>
+      </div></div>
+    );
+  }
   const top = scores[ranked[0].id] || 0;
 
   return (
     <div className="screen">
       <div className="screen__scroll" style={{ paddingTop: 54 }}>
         <button className="chip" style={{ cursor: 'pointer', marginBottom: 16 }} onClick={onBack}><Icon.back s={14}/> Back</button>
-        <p className="eyebrow" style={{ color: 'var(--amber)' }}>{completed === 0 ? 'Game not started' : `After ${completed} ${completed === 1 ? 'round' : 'rounds'}`}</p>
+        <p className="eyebrow" style={{ color: 'var(--amber)' }}>{!completed ? 'Game not started' : `After ${completed} ${completed === 1 ? 'round' : 'rounds'}`}</p>
         <h1 className="h-display" style={{ fontSize: 34, margin: '6px 0 22px' }}>SCOREBOARD</h1>
 
-        {/* podium leader */}
         <div className="card" style={{ padding: 20, marginBottom: 18, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(110% 90% at 50% 0%, rgba(255,178,62,0.18), transparent 60%)' }} />
           <div style={{ position: 'relative' }}>
@@ -256,7 +273,7 @@ function ScoreboardScreen({ players, round, scores, completed, onBack }) {
       </div>
 
       <div className="dock">
-        <button className="btn btn--primary" onClick={onBack}>Back to round <Icon.arrow c="#0A0410"/></button>
+        <button className="btn btn--primary" onClick={onBack}>Back <Icon.arrow c="#0A0410"/></button>
       </div>
     </div>
   );
