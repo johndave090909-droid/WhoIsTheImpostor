@@ -1,5 +1,5 @@
 // Lobby + Setup screens (booth) — live Firebase data
-const { toList, connectedList, MAX_SLOTS } = window.IMP;
+const { toList, connectedList, playingList, audienceList, isPlaying } = window.IMP;
 
 /* ───────────── QR code ───────────── */
 function QR({ text, size = 54 }) {
@@ -17,9 +17,11 @@ function QR({ text, size = 54 }) {
 }
 
 /* ════════════════════ LOBBY ════════════════════ */
-function LobbyScreen({ roomCode, players, round, scores, onStart, onKick, onSignOut, onEndGame }) {
+function LobbyScreen({ roomCode, players, round, scores, onStart, onKick, onRole, onSignOut, onEndGame }) {
   const live = connectedList(players);
-  const canStart = live.length >= 3;
+  const playing = playingList(players);
+  const audience = audienceList(players);
+  const canStart = playing.length >= 3;
   const link = Game.playerURL(roomCode);
   const [copied, setCopied] = useState(false);
 
@@ -29,9 +31,6 @@ function LobbyScreen({ roomCode, players, round, scores, onStart, onKick, onSign
       else { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1500); }
     } catch (e) { /* dismissed */ }
   };
-
-  const cells = [];
-  for (let i = 0; i < MAX_SLOTS; i++) cells.push(live[i] || null);
 
   return (
     <div className="screen">
@@ -66,20 +65,28 @@ function LobbyScreen({ roomCode, players, round, scores, onStart, onKick, onSign
           </div>
         </div>
 
-        {/* players */}
+        {/* roster — tap a tile to toggle Playing / Audience */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 4px 12px' }}>
-          <SectionLabel accent="var(--cyan)">Headsets · {live.length} linked</SectionLabel>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--faint)' }}>{live.length}/{MAX_SLOTS}</span>
+          <SectionLabel accent="var(--cyan)">Roster · tap to set who&apos;s playing</SectionLabel>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--faint)' }}>
+            <span style={{ color: 'var(--lime)' }}>{playing.length} playing</span> · {audience.length} audience
+          </span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {cells.map((p, i) => <PlayerCell key={p ? p.id : 'empty' + i} p={p} score={p ? (scores[p.id] || 0) : 0} delay={i * 0.04} onKick={onKick} />)}
-        </div>
+        {live.length === 0 ? (
+          <div className="card" style={{ padding: '22px 16px', textAlign: 'center', color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 12.5 }}>
+            Waiting for phones to join… share the room code above.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {live.map((p, i) => <PlayerCell key={p.id} p={p} score={scores[p.id] || 0} delay={i * 0.04} onKick={onKick} onRole={onRole} />)}
+          </div>
+        )}
 
       </div>
 
       <div className="dock">
-        {!canStart && <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>Need at least 3 linked headsets</p>}
+        {!canStart && <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 12, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>Tap players to set at least 3 as <span style={{ color: 'var(--lime)' }}>Playing</span></p>}
         <button className="btn btn--primary" disabled={!canStart} onClick={onStart}>
           Set up round <Icon.arrow c="#0A0410" />
         </button>
@@ -88,29 +95,27 @@ function LobbyScreen({ roomCode, players, round, scores, onStart, onKick, onSign
   );
 }
 
-function PlayerCell({ p, score, delay, onKick }) {
-  const empty = !p;
-  const status = empty ? { t: 'Open slot', c: 'var(--faint)' } : { t: 'Linked', c: 'var(--cyan)' };
+function PlayerCell({ p, score, delay, onKick, onRole }) {
+  const playing = isPlaying(p);
+  const accent = playing ? 'var(--lime)' : 'var(--faint)';
+  const toggleRole = () => onRole && onRole(p.id, playing ? 'audience' : 'playing');
   return (
-    <div className="card float-up" style={{
+    <div className="card float-up" onClick={onRole ? toggleRole : undefined} style={{
       padding: 12, display: 'flex', alignItems: 'center', gap: 11,
-      animationDelay: `${delay}s`,
-      border: empty ? '1px dashed var(--line-2)' : 'none',
-      background: empty ? 'transparent' : 'var(--surface)',
-      boxShadow: empty ? 'none' : '0 0 0 1px var(--line) inset',
+      animationDelay: `${delay}s`, cursor: onRole ? 'pointer' : 'default',
+      background: 'var(--surface)',
+      boxShadow: playing ? '0 0 0 1.5px var(--lime) inset' : '0 0 0 1px var(--line) inset',
     }}>
-      {empty
-        ? <div style={{ width: 44, height: 44, borderRadius: '50%', border: '1px dashed var(--line-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--faint)', flexShrink: 0 }}><Icon.head s={18} c="var(--faint)"/></div>
-        : <Avatar p={p} size={44} />}
+      <Avatar p={p} size={44} dim={!playing} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: empty ? 'var(--faint)' : 'var(--ink)' }}>{empty ? '—' : p.name}</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.c, boxShadow: empty ? 'none' : `0 0 8px ${status.c}` }} />
-          <span style={{ fontSize: 11, color: status.c, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{status.t}</span>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, boxShadow: `0 0 8px ${accent}` }} />
+          <span style={{ fontSize: 11, color: accent, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>{playing ? 'Playing' : 'Audience'}</span>
         </div>
       </div>
-      {!empty && score > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--violet)' }}>{score}</span>}
-      {!empty && onKick && (
+      {score > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--violet)' }}>{score}</span>}
+      {onKick && (
         <button onClick={(e) => { e.stopPropagation(); onKick(p.id); }} title="Remove player" style={{
           border: 'none', cursor: 'pointer', background: 'var(--surface-3)',
           width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
@@ -127,7 +132,7 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, onBack
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
   const fileRef = useRef(null);
-  const live = connectedList(players);
+  const live = playingList(players);   // only playing members can be the impostor
   const trackList = toList(tracks);
   const impostorConnected = live.some(p => p.id === draft.impostorId);
   const ready = draft.common && draft.impostor && draft.impostorId && impostorConnected;

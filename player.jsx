@@ -333,6 +333,7 @@ function PlayerApp() {
   };
 
   const me = wId(players[uid], uid) || { id: uid, name: name || 'YOU', c1: '#9A6BFF', c2: '#25E6FF' };
+  const amPlaying = window.IMP.isPlaying(players[uid]);
 
   /* ── render ── */
   let view;
@@ -341,9 +342,9 @@ function PlayerApp() {
   } else if (showBoard) {
     view = <PlayScoresView uid={uid} players={players} scores={scores} onBack={() => setShowBoard(false)} />;
   } else if (!ps || status === 'lobby' || status === 'setup') {
-    view = <WaitView me={me} room={room} count={window.IMP.connectedList(players).length} status={status} onBoard={() => setShowBoard(true)} onLeave={leave} />;
+    view = <WaitView me={me} room={room} count={window.IMP.connectedList(players).length} status={status} amPlaying={amPlaying} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else if (status === 'live') {
-    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
+    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} amPlaying={amPlaying} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
   } else if (status === 'reveal') {
     view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else {
@@ -392,17 +393,25 @@ const fieldStyle = {
 };
 
 /* ════════════ WAITING ════════════ */
-function WaitView({ me, room, count, status, onBoard, onLeave }) {
+function WaitView({ me, room, count, status, amPlaying, onBoard, onLeave }) {
   return (
     <div className="screen">
       <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 8 }}>
         <div className="pulse" style={{ borderRadius: '50%', marginBottom: 6 }}><Avatar p={me} size={96} glow /></div>
         <h1 className="h-display" style={{ fontSize: 30, color: 'var(--ink)' }}>{me.name}</h1>
-        <div className="chip" style={{ color: 'var(--cyan)' }}>Room {room}</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div className="chip" style={{ color: 'var(--cyan)' }}>Room {room}</div>
+          <div className="chip" style={{ color: amPlaying ? 'var(--lime)' : 'var(--violet)' }}>
+            {amPlaying ? '🎧 Playing' : '👀 Audience'}
+          </div>
+        </div>
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--faint)', marginTop: 18 }}>
           {status === 'setup' ? 'The booth is setting the trap…' : "You're in. Waiting for the booth…"}
         </p>
-        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--violet)' }}>{count} in the room</p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: amPlaying ? 'var(--lime)' : 'var(--violet)', maxWidth: 260 }}>
+          {amPlaying ? 'You’ll hear a track this round — get your headset ready.' : 'You’ll watch and guess — the booth can move you into the game.'}
+        </p>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--faint)' }}>{count} in the room</p>
         <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
           {onBoard && (
             <button className="chip" style={{ cursor: 'pointer', color: 'var(--amber)' }} onClick={onBoard}>
@@ -421,12 +430,14 @@ function WaitView({ me, room, count, status, onBoard, onLeave }) {
 }
 
 /* ════════════ LIVE (player) ════════════ */
-function PlayLiveView({ me, ps, players, uid, assignReady, loadPct, started, onStart, myVote, onVote }) {
+function PlayLiveView({ me, ps, players, uid, amPlaying, assignReady, loadPct, started, onStart, myVote, onVote }) {
   const remaining = Game.timerRemaining(ps.timer);
   const playing = !!(ps.audio && ps.audio.playing);
-  const others = window.IMP.connectedList(players).filter((p) => p.id !== uid);
+  // you can only accuse someone who's actually playing this round
+  const others = window.IMP.playingList(players).filter((p) => p.id !== uid);
 
-  if (!started) {
+  // PLAYING members must arm their headset first; audience skips straight to watch+vote.
+  if (amPlaying && !started) {
     return (
       <div className="screen">
         <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 10 }}>
@@ -454,19 +465,31 @@ function PlayLiveView({ me, ps, players, uid, assignReady, loadPct, started, onS
           <div className="chip" style={{ color: 'var(--magenta)' }}>
             <span className="pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--magenta)', display: 'inline-block' }} /> Live
           </div>
-          <div className="chip" style={{ fontFamily: 'var(--font-mono)' }}>{pfmt(Math.ceil(remaining))}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div className="chip" style={{ color: amPlaying ? 'var(--lime)' : 'var(--violet)' }}>{amPlaying ? '🎧 Playing' : '👀 Audience'}</div>
+            <div className="chip" style={{ fontFamily: 'var(--font-mono)' }}>{pfmt(Math.ceil(remaining))}</div>
+          </div>
         </div>
 
-        {/* now playing (no track name — stays secret) */}
+        {/* now playing (playing) / watching (audience) — no track name, stays secret */}
         <div className="card" style={{ padding: '28px 20px', marginBottom: 22, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(100% 100% at 50% 0%, rgba(37,230,255,0.16), transparent 65%)' }} />
+          <div style={{ position: 'absolute', inset: 0, background: amPlaying ? 'radial-gradient(100% 100% at 50% 0%, rgba(37,230,255,0.16), transparent 65%)' : 'radial-gradient(100% 100% at 50% 0%, rgba(154,107,255,0.16), transparent 65%)' }} />
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
             <div className="breathe" style={{ width: 84, height: 84, borderRadius: 20, background: `linear-gradient(135deg, ${me.c1}, ${me.c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ transform: 'scale(1.6)' }}><Eq color="#0A0410" bars={4} playing={playing} /></div>
+              <div style={{ transform: 'scale(1.6)' }}><Eq color="#0A0410" bars={4} playing={amPlaying && playing} /></div>
             </div>
             <div>
-              <p className="eyebrow">{playing ? 'Now playing in your ears' : 'Paused by the booth'}</p>
-              <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>Listen closely 🎧</p>
+              {amPlaying ? (
+                <>
+                  <p className="eyebrow">{playing ? 'Now playing in your ears' : 'Paused by the booth'}</p>
+                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>Listen closely 🎧</p>
+                </>
+              ) : (
+                <>
+                  <p className="eyebrow">You&apos;re in the audience</p>
+                  <p style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 18, marginTop: 4 }}>Watch &amp; guess 👀</p>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -474,7 +497,9 @@ function PlayLiveView({ me, ps, players, uid, assignReady, loadPct, started, onS
         {/* vote */}
         <SectionLabel accent="var(--magenta)">Who&apos;s the impostor?</SectionLabel>
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--faint)', margin: '0 4px 14px' }}>
-          Hearing something off? Lock your guess — you can change it until the reveal.
+          {amPlaying
+            ? 'Hearing something off? Lock your guess — you can change it until the reveal.'
+            : 'Watch the players react. Lock your guess — you can change it until the reveal.'}
         </p>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', padding: '4px 0' }}>
           {others.map((p) => {

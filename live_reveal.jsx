@@ -14,6 +14,8 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
   ready = ready || {};
   assignments = assignments || {};
   const live = window.IMP.connectedList(players);
+  const playingMembers = window.IMP.playingList(players);
+  const audienceMembers = window.IMP.audienceList(players);
   const crowd = withId(tracks[draft.common], draft.common);
   const imp = withId(tracks[draft.impostor], draft.impostor);
   const playing = !!(ps.audio && ps.audio.playing);
@@ -40,7 +42,7 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <div className="chip" style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>Room {room}</div>
-            <div className="chip"><Icon.head s={13} c="var(--cyan)"/> {live.length}</div>
+            <div className="chip"><Icon.head s={13} c="var(--cyan)"/> {playingMembers.length}</div>
           </div>
         </div>
 
@@ -97,7 +99,7 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
 
         {/* two streams */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
-          <StreamCard label="Crowd stream" accent="var(--cyan)" t={crowd} count={Math.max(0, live.length - 1)} playing={playing} />
+          <StreamCard label="Crowd stream" accent="var(--cyan)" t={crowd} count={Math.max(0, playingMembers.length - 1)} playing={playing} />
           <StreamCard label="Impostor stream" accent="var(--magenta)" t={imp} count={1} playing={playing} />
         </div>
 
@@ -110,7 +112,7 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
         </div>
 
         <div className="card" style={{ overflow: 'hidden' }}>
-          {live.map((p, i) => {
+          {playingMembers.map((p, i) => {
             const isImp = p.id === draft.impostorId;
             const t = isImp ? imp : crowd;
             const hasVoted = votes && votes[p.id];
@@ -118,7 +120,7 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
               <div key={p.id} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
                 background: isImp && revealView ? 'rgba(255,46,154,0.1)' : 'transparent',
-                borderBottom: i < live.length-1 ? '1px solid var(--line)' : 'none',
+                borderBottom: i < playingMembers.length-1 ? '1px solid var(--line)' : 'none',
                 boxShadow: isImp && revealView ? 'inset 3px 0 0 var(--magenta)' : 'none',
               }}>
                 <Avatar p={p} size={38} />
@@ -135,6 +137,30 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
             );
           })}
         </div>
+
+        {/* audience — watch-only, but they still guess */}
+        {audienceMembers.length > 0 && (
+          <>
+            <div style={{ margin: '18px 4px 12px' }}>
+              <SectionLabel accent="var(--violet)">Audience · {audienceMembers.length} watching</SectionLabel>
+            </div>
+            <div className="card" style={{ overflow: 'hidden' }}>
+              {audienceMembers.map((p, i) => {
+                const hasVoted = votes && votes[p.id];
+                return (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: i < audienceMembers.length-1 ? '1px solid var(--line)' : 'none' }}>
+                    <Avatar p={p} size={34} dim />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>{p.name}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>👀 watching</div>
+                    </div>
+                    {hasVoted && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--lime)', padding: '3px 7px', borderRadius: 999, boxShadow: '0 0 0 1px var(--lime) inset' }}>VOTED</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
       </div>
 
@@ -168,7 +194,7 @@ function StreamCard({ label, accent, t, count, playing }) {
 }
 
 /* ════════════════════ REVEAL ════════════════════ */
-function RevealScreen({ players, tracks, round, result, onNext, onScores }) {
+function RevealScreen({ players, tracks, round, result, streaks, onNext, onScores }) {
   const [shown, setShown] = useState(false);
   useEffect(() => { const id = setTimeout(() => setShown(true), 700); return () => clearTimeout(id); }, []);
 
@@ -239,10 +265,13 @@ function RevealScreen({ players, tracks, round, result, onNext, onScores }) {
           <div className="card" style={{ padding: '12px 16px' }}>
             {live.map((p, i) => {
               const d = deltas[p.id] || 0;
+              const isImp = p.id === result.impostorUid;
+              const streak = (result.streaks && result.streaks[p.id]) || 0;
               return (
                 <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < live.length-1 ? '1px solid var(--line)' : 'none' }}>
                   <Avatar p={p} size={26} />
-                  <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: p.id===result.impostorUid?'var(--magenta)':'var(--ink)' }}>{p.name}{p.id===result.impostorUid?' · impostor':''}</span>
+                  <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, color: isImp?'var(--magenta)':'var(--ink)' }}>{p.name}{isImp?' · impostor':''}</span>
+                  {!isImp && streak > 1 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--amber)' }}>🔥{streak}</span>}
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 700, color: d > 0 ? 'var(--lime)' : 'var(--faint)' }}>{d > 0 ? `+${d}` : '—'}</span>
                 </div>
               );

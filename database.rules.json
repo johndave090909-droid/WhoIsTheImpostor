@@ -58,6 +58,10 @@
         "scores": {
           ".read": "auth != null",
           ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+        },
+        "streaks": {
+          ".read": "auth != null",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
         }
       }
     }

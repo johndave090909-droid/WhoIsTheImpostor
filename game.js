@@ -85,6 +85,7 @@
       c2: colors.c2,
       joinedAt: window.fb.TS,
       connected: true,
+      role: "audience",        // default role — operator promotes to "playing"
       kicked: null,            // clear any previous kick when (re)joining
     });
     bindPresence(room, uid);
@@ -131,6 +132,11 @@
   function unbindPresence(room, uid) {
     const u = _presence[room + "/" + uid];
     if (u) u();
+  }
+
+  // host: set a member's role ("playing" | "audience")
+  function setRole(room, uid, role) {
+    return roomRef(room, "players/" + uid + "/role").set(role);
   }
 
   // host: remove a player from the room (they get bounced to the join screen)
@@ -276,10 +282,12 @@
     await roomRef(room, "votes").set(null);
     await roomRef(room, "ready").set(null);
 
-    // each connected player gets only their own URL — no crowd/impostor label
+    // only PLAYING members get a track — audience is watch-only (no assignment),
+    // so they never enter the booth's "loading headsets" gate.
     const assignments = {};
     Object.keys(players || {}).forEach((uid) => {
-      if (!players[uid].connected) return;
+      const p = players[uid];
+      if (!p || !p.connected || p.role !== "playing") return;
       const isImp = uid === draft.impostorId;
       assignments[uid] = {
         url: isImp ? impUrl : commonUrl,
@@ -356,6 +364,8 @@
     const round = (await roomRef(room, "publicState/round").get()).val() || 1;
     const secret = (await roomRef(room, "round").get()).val() || {};
     const votes = (await roomRef(room, "votes").get()).val() || {};
+    const players = (await roomRef(room, "players").get()).val() || {};
+    const prevStreaks = (await roomRef(room, "streaks").get()).val() || {};
     const impostorUid = secret.impostorUid;
 
     const tally = {};
@@ -368,10 +378,22 @@
     const forImpostor = tally[impostorUid] || 0;
     const caught = voters > 0 && forImpostor > voters / 2;
 
-    // deltas: correct guessers +2 each; impostor +5 if not caught
+    // Scoring: everyone (players + audience) who guesses the impostor earns
+    // 5 pts + a per-person consecutive-streak bonus (+1 per round in the streak).
+    // A wrong guess or no vote resets that person's streak to 0.
+    // The impostor doesn't guess; they get +5 if they got away.
     const deltas = {};
-    Object.entries(votes).forEach(([voterUid, target]) => {
-      if (target === impostorUid) deltas[voterUid] = (deltas[voterUid] || 0) + 2;
+    const streaks = {};
+    Object.entries(players).forEach(([uid, p]) => {
+      if (!p || !p.connected || uid === impostorUid) return; // impostor scored separately
+      const guessedRight = votes[uid] === impostorUid;
+      if (guessedRight) {
+        const newStreak = (prevStreaks[uid] || 0) + 1;
+        streaks[uid] = newStreak;
+        deltas[uid] = 5 + (newStreak - 1); // 5 base + streak-so-far bonus
+      } else {
+        streaks[uid] = 0; // wrong or didn't vote → streak broken
+      }
     });
     if (!caught) deltas[impostorUid] = (deltas[impostorUid] || 0) + 5;
 
@@ -383,6 +405,7 @@
       tally,
       voters,
       deltas,
+      streaks,
     });
 
     // apply deltas to running scores
@@ -391,6 +414,10 @@
       cur[uid] = (cur[uid] || 0) + d;
     });
     await roomRef(room, "scores").set(cur);
+
+    // persist updated streaks (merge so disconnected members keep theirs)
+    const mergedStreaks = Object.assign({}, prevStreaks, streaks);
+    await roomRef(room, "streaks").set(mergedStreaks);
 
     await roomRef(room, "publicState").update({
       status: "reveal",
@@ -433,6 +460,7 @@
     joinRoom,
     bindPresence,
     unbindPresence,
+    setRole,
     kick,
     leaveRoom,
     endGame,
