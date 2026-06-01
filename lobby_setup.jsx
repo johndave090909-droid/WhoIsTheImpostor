@@ -127,11 +127,14 @@ function PlayerCell({ p, score, delay, onKick, onRole }) {
   );
 }
 
-/* map any stored tag (incl. legacy crowd/impostor/both) to a tempo */
+/* map any stored tag (incl. legacy crowd/impostor/both) to a tempo bucket:
+   'fast' | 'slow' | 'untagged'. Legacy crowd→fast, impostor→slow; anything
+   unclassified (legacy 'both', or no tag) lands in 'untagged'. */
 function normalizeTempo(tag) {
   if (tag === 'fast' || tag === 'slow') return tag;
+  if (tag === 'crowd') return 'fast';      // legacy
   if (tag === 'impostor') return 'slow';   // legacy
-  return 'fast';                            // crowd / both / missing → fast
+  return 'untagged';                       // both / missing
 }
 
 /* ════════════════════ SETUP ════════════════════ */
@@ -250,11 +253,12 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
           <input ref={fileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={onFile} />
         </div>
         {/* tempo filter chips */}
-        <div style={{ display: 'flex', gap: 8, margin: '0 4px 12px' }}>
+        <div style={{ display: 'flex', gap: 8, margin: '0 4px 12px', flexWrap: 'wrap' }}>
           {[
             { k: 'all',  label: 'All',  c: 'var(--violet)' },
             { k: 'fast', label: '⚡ Fast', c: 'var(--amber)' },
             { k: 'slow', label: '🌙 Slow', c: 'var(--cyan)' },
+            { k: 'untagged', label: 'Untagged', c: 'var(--faint)' },
           ].map(f => {
             const on = tempoFilter === f.k;
             return (
