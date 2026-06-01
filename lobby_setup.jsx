@@ -304,7 +304,7 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
                   </div>
                 </button>
                 {sel && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: sel.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${sel.c}55 inset`, flexShrink: 0 }}>{sel.t}</span>}
-                <TempoPicker tempo={tempo} onSet={(g) => { if (g !== tempo) setTagConfirm({ track: t, tempo: g }); }} />
+                <TempoPicker tempo={tempo} onSet={(g) => setTagConfirm({ track: t, tempo: g === tempo ? 'untagged' : g })} />
                 {onDeleteTrack && (
                   <button onClick={(e) => { e.stopPropagation(); deleteTrack(t); }} title="Delete track" style={{
                     border: 'none', cursor: 'pointer', background: 'var(--surface-3)',
@@ -364,23 +364,27 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
       {/* confirm a track tempo change */}
       {(() => {
         const meta = {
-          fast: { label: '⚡ Fast', accent: 'var(--amber)' },
-          slow: { label: '🌙 Slow', accent: 'var(--cyan)' },
+          fast:     { label: '⚡ Fast', accent: 'var(--amber)' },
+          slow:     { label: '🌙 Slow', accent: 'var(--cyan)' },
+          untagged: { label: 'Untagged', accent: 'var(--faint)' },
         };
         const m = tagConfirm ? meta[tagConfirm.tempo] : null;
+        const clearing = tagConfirm && tagConfirm.tempo === 'untagged';
         return (
           <Modal
             open={!!tagConfirm}
-            title="Change track tempo?"
+            title={clearing ? 'Clear track tempo?' : 'Change track tempo?'}
             accent={m ? m.accent : 'var(--violet)'}
-            confirmLabel={m ? `Set ${m.label}` : 'Confirm'}
+            confirmLabel={clearing ? 'Clear tag' : (m ? `Set ${m.label}` : 'Confirm')}
             onCancel={() => setTagConfirm(null)}
             onConfirm={() => { onTag(tagConfirm.track.id, tagConfirm.tempo); setTagConfirm(null); }}
           >
-            {tagConfirm && m && <>
+            {tagConfirm && m && (clearing ? <>
+              Remove the tempo tag from <strong style={{ color: 'var(--ink)' }}>{tagConfirm.track.title}</strong>? It&apos;ll move to <strong style={{ color: 'var(--muted)' }}>Untagged</strong>.
+            </> : <>
               Mark <strong style={{ color: 'var(--ink)' }}>{tagConfirm.track.title}</strong> as{' '}
               <strong style={{ color: m.accent }}>{m.label}</strong>?
-            </>}
+            </>)}
           </Modal>
         );
       })()}
