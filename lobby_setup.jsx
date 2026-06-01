@@ -134,6 +134,7 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
   const [previewId, setPreviewId] = useState(null);   // which track is auditioning
+  const [tagConfirm, setTagConfirm] = useState(null); // { track, tag } pending role change
   const fileRef = useRef(null);
   const previewRef = useRef(null);
 
@@ -271,7 +272,7 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
                 </button>
                 {sel
                   ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: sel.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${sel.c}55 inset`, flexShrink: 0 }}>{sel.t}</span>
-                  : <TagPicker tag={ttag} onSet={(g) => onTag(t.id, g)} />}
+                  : <TagPicker tag={ttag} onSet={(g) => { if (g !== ttag) setTagConfirm({ track: t, tag: g }); }} />}
                 {onDeleteTrack && (
                   <button onClick={(e) => { e.stopPropagation(); deleteTrack(t); }} title="Delete track" style={{
                     border: 'none', cursor: 'pointer', background: 'var(--surface-3)',
@@ -327,6 +328,31 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
 
       {/* booth-only preview player (audible on the operator device only) */}
       <audio ref={previewRef} preload="none" />
+
+      {/* confirm a track role change */}
+      {(() => {
+        const meta = {
+          crowd:    { label: 'Crowd',    accent: 'var(--cyan)',    desc: 'only available for the crowd slot' },
+          impostor: { label: 'Impostor', accent: 'var(--magenta)', desc: 'only available for the impostor slot' },
+          both:     { label: 'Both',     accent: 'var(--violet)',  desc: 'available for either slot' },
+        };
+        const m = tagConfirm ? meta[tagConfirm.tag] : null;
+        return (
+          <Modal
+            open={!!tagConfirm}
+            title="Change track role?"
+            accent={m ? m.accent : 'var(--violet)'}
+            confirmLabel={m ? `Set ${m.label}` : 'Confirm'}
+            onCancel={() => setTagConfirm(null)}
+            onConfirm={() => { onTag(tagConfirm.track.id, tagConfirm.tag); setTagConfirm(null); }}
+          >
+            {tagConfirm && m && <>
+              Set <strong style={{ color: 'var(--ink)' }}>{tagConfirm.track.title}</strong> to{' '}
+              <strong style={{ color: m.accent }}>{m.label}</strong> — it&apos;ll be {m.desc}.
+            </>}
+          </Modal>
+        );
+      })()}
     </div>
   );
 }

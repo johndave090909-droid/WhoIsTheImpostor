@@ -109,4 +109,49 @@ function RoleTag({ playing }) {
   );
 }
 
-Object.assign(window, { Icon, Avatar, Eq, Wave, Cover, SectionLabel, RoleTag });
+/* ───────────── modal ─────────────
+   Centered dialog over a dimmed, blurred scrim. Tapping the scrim or the ✕
+   cancels. `accent` tints the confirm button + glow. */
+function Modal({ open, title, children, confirmLabel = 'Confirm', cancelLabel = 'Cancel', accent = 'var(--violet)', onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'absolute', inset: 0, zIndex: 200,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 22,
+        background: 'rgba(5,4,9,0.66)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
+        animation: 'float-up .2s cubic-bezier(.2,.8,.2,1) both',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="card"
+        style={{
+          width: '100%', maxWidth: 320, padding: 22, position: 'relative',
+          background: 'var(--surface)',
+          boxShadow: `0 0 0 1px var(--line) inset, 0 24px 60px rgba(0,0,0,.6), 0 0 40px ${accent}33`,
+        }}
+      >
+        <button onClick={onCancel} aria-label="Close" style={{
+          position: 'absolute', top: 12, right: 12, border: 'none', cursor: 'pointer',
+          width: 30, height: 30, borderRadius: '50%', background: 'var(--surface-3)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 0 1px var(--line) inset',
+        }}><Icon.x s={14} c="var(--muted)" /></button>
+
+        {title && <h2 className="h-display" style={{ fontSize: 21, margin: '2px 36px 12px 0', lineHeight: 1.1 }}>{title}</h2>}
+        <div style={{ fontFamily: 'var(--font-ui)', fontSize: 14, color: 'var(--muted)', lineHeight: 1.5, marginBottom: 20 }}>
+          {children}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn--ghost" style={{ flex: 1, padding: '14px 16px', fontSize: 15 }} onClick={onCancel}>{cancelLabel}</button>
+          <button className="btn btn--primary" style={{ flex: 1, padding: '14px 16px', fontSize: 15, background: `linear-gradient(120deg, ${accent}, var(--violet))` }} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Icon, Avatar, Eq, Wave, Cover, SectionLabel, RoleTag, Modal });
