@@ -128,7 +128,7 @@ function PlayerCell({ p, score, delay, onKick, onRole }) {
 }
 
 /* ════════════════════ SETUP ════════════════════ */
-function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting, onVoting, onBack, onStart, onUpload, onTag }) {
+function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting, onVoting, onBack, onStart, onUpload, onTag, onDeleteTrack }) {
   voting = voting || { players: true, audience: true };
   const audienceCount = audienceList(players).length;
   const [target, setTarget] = useState('crowd');
@@ -159,6 +159,16 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
     if (!live.length) return;
     const r = live[Math.floor(Math.random() * live.length)];
     setDraft(d => ({ ...d, impostorId: r.id }));
+  };
+
+  const deleteTrack = (t) => {
+    // drop it from the draft if it was selected, then ask the host to delete
+    setDraft(d => ({
+      ...d,
+      common: d.common === t.id ? null : d.common,
+      impostor: d.impostor === t.id ? null : d.impostor,
+    }));
+    onDeleteTrack && onDeleteTrack(t.id, t.title);
   };
 
   const onFile = async (e) => {
@@ -233,6 +243,14 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
                 {sel
                   ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em', color: sel.c, padding: '4px 8px', borderRadius: 999, boxShadow: `0 0 0 1px ${sel.c}55 inset`, flexShrink: 0 }}>{sel.t}</span>
                   : <TagPicker tag={ttag} onSet={(g) => onTag(t.id, g)} />}
+                {onDeleteTrack && (
+                  <button onClick={(e) => { e.stopPropagation(); deleteTrack(t); }} title="Delete track" style={{
+                    border: 'none', cursor: 'pointer', background: 'var(--surface-3)',
+                    width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 0 0 1px var(--line) inset',
+                  }}><Icon.x s={13} c="var(--magenta)"/></button>
+                )}
               </div>
             );
           })}

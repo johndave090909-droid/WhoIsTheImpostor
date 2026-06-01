@@ -8,9 +8,12 @@ service firebase.storage {
     // shared, persistent music library (recursive match also allows listing)
     match /library/{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null
+      // create/update must be a sane audio file; on delete request.resource is
+      // null, so keep that as a separate auth-only rule.
+      allow create, update: if request.auth != null
         && request.resource.size < 30 * 1024 * 1024
         && request.resource.contentType.matches('audio/.*');
+      allow delete: if request.auth != null;
     }
     // legacy per-room uploads (kept readable for older rooms)
     match /rooms/{room}/tracks/{trackFile} {

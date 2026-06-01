@@ -261,6 +261,18 @@
     return db().ref("library/" + trackId + "/tag").set(tag);
   }
 
+  // host: permanently delete a library track — removes the RTDB entry AND the
+  // underlying Storage file. Best-effort on the file (ignore if already gone).
+  async function deleteTrack(trackId) {
+    await window.fb.getUid();
+    const entry = (await db().ref("library/" + trackId).get()).val();
+    await db().ref("library/" + trackId).remove();
+    const path = entry && entry.path;
+    if (path) {
+      try { await window.fb.storage.ref(path).delete(); } catch (_) {}
+    }
+  }
+
   // Pull in any audio already sitting in the Storage library/ folder that
   // doesn't yet have a metadata entry (e.g. uploaded via the Firebase console).
   async function reconcileLibrary() {
@@ -508,6 +520,7 @@
     canVote,
     uploadTrack,
     setTrackTag,
+    deleteTrack,
     watchLibrary,
     reconcileLibrary,
     startRound,
