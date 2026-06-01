@@ -133,7 +133,31 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
   const audienceCount = audienceList(players).length;
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
+  const [previewId, setPreviewId] = useState(null);   // which track is auditioning
   const fileRef = useRef(null);
+  const previewRef = useRef(null);
+
+  // operator preview: tap a track's artwork to audition it (booth-only, local)
+  const togglePreview = (t) => {
+    const a = previewRef.current;
+    if (!a || !t.url) return;
+    if (previewId === t.id) {            // tapping the playing one → stop
+      a.pause();
+      setPreviewId(null);
+      return;
+    }
+    a.src = t.url;
+    a.play().then(() => setPreviewId(t.id)).catch(() => setPreviewId(null));
+  };
+  useEffect(() => {
+    const a = previewRef.current;
+    if (!a) return;
+    const onEnd = () => setPreviewId(null);
+    a.addEventListener('ended', onEnd);
+    return () => { a.removeEventListener('ended', onEnd); a.pause(); };
+  }, []);
+  // stop preview when leaving setup (round starts / back to lobby)
+  useEffect(() => () => { if (previewRef.current) previewRef.current.pause(); }, []);
   const live = playingList(players);   // only playing members can be the impostor
   const allTracks = toList(tracks);
   // a track suits the active slot if it's tagged for that slot or "both" (default)
@@ -233,10 +257,15 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
                 borderBottom: i < trackList.length-1 ? '1px solid var(--line)' : 'none',
                 boxShadow: sel ? `inset 3px 0 0 ${sel.c}` : 'none',
               }}>
-                <button onClick={() => pickTrack(t)} style={{ flex: 1, minWidth: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, padding: 0 }}>
+                <button onClick={(e) => { e.stopPropagation(); togglePreview(t); }} title="Preview" style={{ position: 'relative', border: 'none', background: 'none', padding: 0, cursor: 'pointer', flexShrink: 0, borderRadius: 12, lineHeight: 0 }}>
                   <Cover t={t} />
+                  <div style={{ position: 'absolute', inset: 0, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(7,6,12,0.45)' }}>
+                    {previewId === t.id ? <Icon.pause s={18} c="#fff" /> : <Icon.play s={18} c="#fff" />}
+                  </div>
+                </button>
+                <button onClick={() => pickTrack(t)} style={{ flex: 1, minWidth: 0, border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 12, padding: 0 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 15, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
+                    <div style={{ fontWeight: 600, fontSize: 15, color: previewId === t.id ? 'var(--cyan)' : 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.title}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.file}</div>
                   </div>
                 </button>
@@ -291,10 +320,13 @@ function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, voting
       </div>
 
       <div className="dock">
-        <button className="btn btn--primary" disabled={!ready} onClick={onStart}>
+        <button className="btn btn--primary" disabled={!ready} onClick={() => { if (previewRef.current) previewRef.current.pause(); onStart(); }}>
           <Icon.bolt c="#0A0410"/> Start round
         </button>
       </div>
+
+      {/* booth-only preview player (audible on the operator device only) */}
+      <audio ref={previewRef} preload="none" />
     </div>
   );
 }
