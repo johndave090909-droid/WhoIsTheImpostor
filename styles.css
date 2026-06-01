@@ -42,13 +42,13 @@ html, body {
   color: var(--ink);
 }
 
-/* page chrome — frame centered on a dark club floor */
+/* page chrome — full-bleed on phones, a centered phone-width column on desktop */
 .stage {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  padding: 40px 20px;
   background:
     radial-gradient(900px 600px at 18% 0%, rgba(154,107,255,0.16), transparent 60%),
     radial-gradient(800px 600px at 82% 100%, rgba(255,46,154,0.14), transparent 60%),
@@ -56,7 +56,18 @@ html, body {
     #050409;
 }
 
-/* ── the operator screen surface (lives inside iOS frame) ── */
+/* the app surface — fills the screen, no device bezel */
+.device {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ── the screen surface (fills .device) ── */
 .screen {
   position: absolute;
   inset: 0;

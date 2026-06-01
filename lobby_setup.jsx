@@ -17,7 +17,7 @@ function QR({ text, size = 54 }) {
 }
 
 /* ════════════════════ LOBBY ════════════════════ */
-function LobbyScreen({ roomCode, players, round, scores, onStart }) {
+function LobbyScreen({ roomCode, players, round, scores, onStart, onKick, onSignOut, onEndGame }) {
   const live = connectedList(players);
   const canStart = live.length >= 3;
   const link = Game.playerURL(roomCode);
@@ -44,7 +44,11 @@ function LobbyScreen({ roomCode, players, round, scores, onStart }) {
               WHO&apos;S THE<br/><span style={{ color: 'var(--magenta)', textShadow: 'var(--glow-magenta)' }}>IMPOSTOR</span>
             </h1>
           </div>
-          <div className="chip" style={{ color: 'var(--cyan)' }}>Round {round}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+            <div className="chip" style={{ color: 'var(--cyan)' }}>Round {round}</div>
+            {onEndGame && <button className="chip" style={{ cursor: 'pointer', color: 'var(--magenta)' }} onClick={onEndGame}>End game</button>}
+            {onSignOut && <button className="chip" style={{ cursor: 'pointer' }} onClick={onSignOut}>Sign out</button>}
+          </div>
         </div>
 
         {/* room hero */}
@@ -69,7 +73,7 @@ function LobbyScreen({ roomCode, players, round, scores, onStart }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {cells.map((p, i) => <PlayerCell key={p ? p.id : 'empty' + i} p={p} score={p ? (scores[p.id] || 0) : 0} delay={i * 0.04} />)}
+          {cells.map((p, i) => <PlayerCell key={p ? p.id : 'empty' + i} p={p} score={p ? (scores[p.id] || 0) : 0} delay={i * 0.04} onKick={onKick} />)}
         </div>
 
       </div>
@@ -84,7 +88,7 @@ function LobbyScreen({ roomCode, players, round, scores, onStart }) {
   );
 }
 
-function PlayerCell({ p, score, delay }) {
+function PlayerCell({ p, score, delay, onKick }) {
   const empty = !p;
   const status = empty ? { t: 'Open slot', c: 'var(--faint)' } : { t: 'Linked', c: 'var(--cyan)' };
   return (
@@ -106,12 +110,20 @@ function PlayerCell({ p, score, delay }) {
         </div>
       </div>
       {!empty && score > 0 && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--violet)' }}>{score}</span>}
+      {!empty && onKick && (
+        <button onClick={(e) => { e.stopPropagation(); onKick(p.id); }} title="Remove player" style={{
+          border: 'none', cursor: 'pointer', background: 'var(--surface-3)',
+          width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 0 1px var(--line) inset',
+        }}><Icon.x s={13} c="var(--magenta)"/></button>
+      )}
     </div>
   );
 }
 
 /* ════════════════════ SETUP ════════════════════ */
-function SetupScreen({ players, tracks, round, draft, setDraft, onBack, onStart, onUpload }) {
+function SetupScreen({ roomCode, players, tracks, round, draft, setDraft, onBack, onStart, onUpload }) {
   const [target, setTarget] = useState('crowd');
   const [uploadPct, setUploadPct] = useState(null);
   const fileRef = useRef(null);
@@ -156,7 +168,10 @@ function SetupScreen({ players, tracks, round, draft, setDraft, onBack, onStart,
   return (
     <div className="screen">
       <div className="screen__scroll">
-        <button className="chip" style={{ cursor: 'pointer', marginBottom: 16 }} onClick={onBack}><Icon.back s={14}/> Booth</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <button className="chip" style={{ cursor: 'pointer' }} onClick={onBack}><Icon.back s={14}/> Booth</button>
+          {roomCode && <div className="chip" style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>Room {roomCode}</div>}
+        </div>
         <p className="eyebrow">Round {round} · setup</p>
         <h1 className="h-display" style={{ fontSize: 30, margin: '6px 0 20px' }}>SET THE TRAP</h1>
 

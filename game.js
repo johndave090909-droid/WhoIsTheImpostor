@@ -56,7 +56,7 @@
 
   // ── room lifecycle ───────────────────────────────────────
   async function createRoom() {
-    const uid = await window.fb.ready;
+    const uid = await window.fb.getUid();
     const code = randomRoomCode();
     await roomRef(code, "meta").set({
       code,
@@ -77,7 +77,7 @@
   }
 
   async function joinRoom(room, name) {
-    const uid = await window.fb.ready;
+    const uid = await window.fb.getUid();
     const colors = randomColors();
     await roomRef(room, "players/" + uid).update({
       name: (name || "GUEST").toUpperCase().slice(0, 8),
@@ -85,20 +85,72 @@
       c2: colors.c2,
       joinedAt: window.fb.TS,
       connected: true,
+      kicked: null,            // clear any previous kick when (re)joining
     });
     bindPresence(room, uid);
     return uid;
   }
 
+  // keep presence handlers so they can be torn down (e.g. when kicked)
+  const _presence = {};
   function bindPresence(room, uid) {
+    const key = room + "/" + uid;
+    if (_presence[key]) return _presence[key];
     const ref = roomRef(room, "players/" + uid + "/connected");
+    const kickedRef = roomRef(room, "players/" + uid + "/kicked");
     const info = db().ref(".info/connected");
-    info.on("value", (s) => {
-      if (s.val() === true) {
-        ref.onDisconnect().set(false);
+    let online = false;
+
+    const ih = info.on("value", (s) => {
+      online = s.val() === true;
+      if (online) {
+        ref.onDisconnect().set(false); // mark offline if THIS tab disconnects
         ref.set(true);
       }
     });
+
+    // Self-heal the reload race: a previous tab's onDisconnect can set our
+    // flag to false *after* the new tab set it true. If connected ever reads
+    // false while we're genuinely online (and not kicked), re-assert true.
+    const ch = ref.on("value", async (s) => {
+      if (!online || s.val() === true) return;
+      let kicked = false;
+      try { kicked = !!(await kickedRef.get()).val(); } catch (_) {}
+      if (online && !kicked) ref.set(true);
+    });
+
+    const unbind = () => {
+      info.off("value", ih);
+      ref.off("value", ch);
+      try { ref.onDisconnect().cancel(); } catch (_) {}
+      delete _presence[key];
+    };
+    _presence[key] = unbind;
+    return unbind;
+  }
+  function unbindPresence(room, uid) {
+    const u = _presence[room + "/" + uid];
+    if (u) u();
+  }
+
+  // host: remove a player from the room (they get bounced to the join screen)
+  async function kick(room, uid) {
+    await roomRef(room, "players/" + uid).update({ kicked: true, connected: false });
+    await roomRef(room, "assignments/" + uid).set(null);
+    await roomRef(room, "ready/" + uid).set(null);
+    await roomRef(room, "votes/" + uid).set(null);
+  }
+
+  // player: voluntarily leave the room (opt out)
+  async function leaveRoom(room, uid) {
+    unbindPresence(room, uid);
+    await roomRef(room, "players/" + uid).remove();
+    await roomRef(room, "ready/" + uid).remove();
+  }
+
+  // host: end the game for everyone (players observe 'ended' and exit)
+  async function endGame(room) {
+    await roomRef(room, "publicState/status").set("ended");
   }
 
   // ── live subscriptions ───────────────────────────────────
@@ -117,17 +169,39 @@
     const s = await roomRef(room, "meta").get();
     return s.exists();
   }
+  // true only if the room exists AND this uid is its host (can read/control it)
+  async function roomOwnedBy(room, uid) {
+    try {
+      const s = await roomRef(room, "meta/hostUid").get();
+      return s.exists() && s.val() === uid;
+    } catch (_) {
+      return false;
+    }
+  }
 
   // ── host: status + setup ─────────────────────────────────
   function setStatus(room, status) {
     return roomRef(room, "publicState/status").set(status);
   }
 
-  // tracks library
-  async function uploadTrack(room, file, meta) {
-    const uid = await window.fb.ready;
+  // ── shared music library (global, persists across rooms/sessions) ──
+  // Files live in Storage under library/ and metadata in RTDB /library,
+  // keyed by a sanitized version of the storage path so each file maps to
+  // exactly one entry (no dupes, even across concurrent booths).
+  const libKey = (path) => path.replace(/[.#$\[\]/]/g, "_");
+  const niceTitle = (file) =>
+    file.replace(/^t_[a-z0-9]+_/i, "").replace(/\.[^.]+$/, "");
+
+  function watchLibrary(cb) {
+    const ref = db().ref("library");
+    const h = ref.on("value", (s) => cb(s.val() || {}));
+    return () => ref.off("value", h);
+  }
+
+  async function uploadTrack(file, meta) {
+    await window.fb.getUid();
     const id = newId("t");
-    const path = "rooms/" + room + "/tracks/" + id + "_" + file.name;
+    const path = "library/" + id + "_" + file.name;
     const ref = window.fb.storage.ref(path);
     const task = ref.put(file, { contentType: file.type });
     if (meta && meta.onProgress) {
@@ -138,6 +212,7 @@
     await task;
     const url = await ref.getDownloadURL();
     const colors = randomColors();
+    const key = libKey(path);
     const entry = {
       title: (meta && meta.title) || file.name.replace(/\.[^.]+$/, ""),
       artist: (meta && meta.artist) || "Local file",
@@ -146,9 +221,43 @@
       url,
       c1: colors.c1,
       c2: colors.c2,
+      path,
     };
-    await roomRef(room, "tracks/" + id).set(entry);
-    return Object.assign({ id }, entry);
+    await db().ref("library/" + key).set(entry);
+    return Object.assign({ id: key }, entry);
+  }
+
+  // Pull in any audio already sitting in the Storage library/ folder that
+  // doesn't yet have a metadata entry (e.g. uploaded via the Firebase console).
+  async function reconcileLibrary() {
+    await window.fb.getUid();
+    let res;
+    try {
+      res = await window.fb.storage.ref("library").listAll();
+    } catch (_) { return; }
+    const snap = (await db().ref("library").get()).val() || {};
+    const known = new Set(
+      Object.values(snap).map((e) => e && e.path).filter(Boolean)
+    );
+    for (const item of res.items) {
+      const path = item.fullPath; // "library/…"
+      const key = libKey(path);
+      if (known.has(path) || snap[key]) continue;
+      try {
+        const url = await item.getDownloadURL();
+        const colors = randomColors();
+        await db().ref("library/" + key).set({
+          title: niceTitle(item.name),
+          artist: "Library",
+          dur: "",
+          file: item.name,
+          url,
+          c1: colors.c1,
+          c2: colors.c2,
+          path,
+        });
+      } catch (_) {}
+    }
   }
 
   // Start a round: write the secret + per-player opaque assignments, then go live.
@@ -162,6 +271,11 @@
       impostorUid: draft.impostorId,
     });
 
+    // clear the previous round's votes + readiness BEFORE handing out new
+    // assignments, so phones start their download against a clean handshake.
+    await roomRef(room, "votes").set(null);
+    await roomRef(room, "ready").set(null);
+
     // each connected player gets only their own URL — no crowd/impostor label
     const assignments = {};
     Object.keys(players || {}).forEach((uid) => {
@@ -174,14 +288,14 @@
     });
     await roomRef(room, "assignments").set(assignments);
 
-    // clear previous votes
-    await roomRef(room, "votes").set(null);
-
+    // Go live but PAUSED. Each phone now downloads its track and reports
+    // ready at rooms/$room/ready/$uid; the booth presses play once everyone
+    // is armed, so all headsets start the song at the same moment.
     const now = window.fb.serverNow();
     await roomRef(room, "publicState").update({
       status: "live",
-      audio: { playing: true, anchorServerMs: now, anchorPosSec: 0 },
-      timer: { running: true, anchorServerMs: now, remainingAtAnchor: ROUND_SECS },
+      audio: { playing: false, anchorServerMs: now, anchorPosSec: 0 },
+      timer: { running: false, anchorServerMs: now, remainingAtAnchor: ROUND_SECS },
     });
   }
 
@@ -233,7 +347,7 @@
 
   // ── player: voting ───────────────────────────────────────
   async function castVote(room, targetUid) {
-    const uid = await window.fb.ready;
+    const uid = await window.fb.getUid();
     return roomRef(room, "votes/" + uid).set(targetUid);
   }
 
@@ -299,6 +413,7 @@
     await roomRef(room, "round").set(null);
     await roomRef(room, "assignments").set(null);
     await roomRef(room, "votes").set(null);
+    await roomRef(room, "ready").set(null);
     await roomRef(room, "publicState").update({
       status: "setup",
       round: round + 1,
@@ -317,12 +432,19 @@
     createRoom,
     joinRoom,
     bindPresence,
+    unbindPresence,
+    kick,
+    leaveRoom,
+    endGame,
     roomExists,
     watch,
     watchNode,
+    roomOwnedBy,
     // host
     setStatus,
     uploadTrack,
+    watchLibrary,
+    reconcileLibrary,
     startRound,
     play,
     pause,

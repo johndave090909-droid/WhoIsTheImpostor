@@ -51,20 +51,21 @@
     serverTimeOffset = s.val() || 0;
   });
 
-  // anonymous identity; resolves with uid
-  const ready = new Promise((resolve, reject) => {
-    auth.onAuthStateChanged((user) => {
-      if (user) resolve(user.uid);
-    });
+  // resolves with the uid of the first signed-in user
+  const ready = new Promise((resolve) => {
+    auth.onAuthStateChanged((user) => { if (user) resolve(user.uid); });
+  });
+
+  // The player app signs in anonymously (just a name + room code). The booth
+  // (window.APP_ROLE === 'booth') requires a real operator account instead.
+  if (window.APP_ROLE !== "booth") {
     auth.signInAnonymously().catch((err) => {
       showBanner(
-        "Sign-in failed: " +
-          (err && err.message) +
+        "Sign-in failed: " + (err && err.message) +
           " — enable Anonymous auth in the Firebase console (or use ?emu=1)."
       );
-      reject(err);
     });
-  });
+  }
 
   window.fb = {
     app: firebase.app(),
@@ -77,6 +78,13 @@
     serverNow: () => Date.now() + serverTimeOffset,
     TS: firebase.database.ServerValue.TIMESTAMP,
     showBanner,
+    // auth helpers (operator accounts — booth only)
+    signUpEmail: (email, pw) => auth.createUserWithEmailAndPassword(email, pw),
+    signInEmail: (email, pw) => auth.signInWithEmailAndPassword(email, pw),
+    signInGoogle: () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()),
+    signOutUser: () => auth.signOut(),
+    onUser: (cb) => auth.onAuthStateChanged(cb),
+    getUid: async () => (auth.currentUser && auth.currentUser.uid) || (await ready),
   };
   ready.then((uid) => (window.fb.uid = uid));
 

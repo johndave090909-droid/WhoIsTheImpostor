@@ -1,5 +1,9 @@
 {
   "rules": {
+    "library": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
     "rooms": {
       "$room": {
         ".read": "auth != null && root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
@@ -26,13 +30,22 @@
           ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
         },
         "assignments": {
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
           "$uid": {
             ".read": "auth.uid === $uid || root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
             ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
           }
         },
+        "ready": {
+          ".read": "auth != null",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
+          "$uid": {
+            ".write": "auth.uid === $uid || root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid"
+          }
+        },
         "votes": {
           ".read": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
+          ".write": "root.child('rooms/'+$room+'/meta/hostUid').val() === auth.uid",
           "$uid": {
             ".read": "auth.uid === $uid",
             ".write": "auth.uid === $uid && root.child('rooms/'+$room+'/publicState/status').val() === 'live'"

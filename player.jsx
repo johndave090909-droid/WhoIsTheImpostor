@@ -2,12 +2,28 @@
 const pfmt = (s) => `${Math.floor(s / 60)}:${String(Math.max(0, s) % 60).padStart(2, '0')}`;
 const wId = (obj, id) => (obj ? Object.assign({ id }, obj) : null);
 
+// remember the room this phone is in, so a page reload rejoins instead of
+// dropping out (the anonymous uid persists, so the player's slot still exists).
+const RKEY = 'imp_room';
+const saveRoom = (code) => { try { localStorage.setItem(RKEY, code); } catch (_) {} };
+const clearRoom = () => { try { localStorage.removeItem(RKEY); } catch (_) {} };
+
+// is time `t` inside one of the audio element's buffered ranges?
+const isBuffered = (a, t) => {
+  try {
+    for (let i = 0; i < a.buffered.length; i++) {
+      if (t >= a.buffered.start(i) - 0.1 && t <= a.buffered.end(i) + 0.1) return true;
+    }
+  } catch (_) {}
+  return false;
+};
+
 function PlayerApp() {
   const roomParam = (new URLSearchParams(location.search).get('room') || '').toUpperCase();
 
   const [uid, setUid] = useState(null);
   const [room, setRoom] = useState(roomParam);
-  const [roomInput, setRoomInput] = useState('');
+  const [roomInput, setRoomInput] = useState(roomParam); // prefilled from link, still editable
   const [name, setName] = useState('');
   const [joined, setJoined] = useState(false);
   const [joining, setJoining] = useState(false);
@@ -19,26 +35,54 @@ function PlayerApp() {
   const [results, setResults] = useState({});
   const [assign, setAssign] = useState(null);
   const [myVote, setMyVote] = useState(null);
+  const [showBoard, setShowBoard] = useState(false); // player-opened leaderboard
 
   const [started, setStarted] = useState(false); // audio gate
   const [, setTick] = useState(0);
   const audioRef = useRef(null);
   const liveRef = useRef({});
+  const objUrlRef = useRef(null);
+  const pctWriteRef = useRef(-1);
+  const [audioUrl, setAudioUrl] = useState(null); // local blob URL once fully fetched
+  const [loadPct, setLoadPct] = useState(0);
 
-  /* ── auth + auto-resume ── */
+  // tell the booth how this phone's download/arming is going
+  const reportReady = (val) => {
+    if (!room || !uid) return;
+    try { window.fb.db.ref('rooms/' + room + '/ready/' + uid).set(val); } catch (_) {}
+  };
+
+  /* ── auth + auto-resume (survives reloads) ── */
   useEffect(() => {
     (async () => {
       try {
         const id = await window.fb.ready;
         setUid(id);
-        if (roomParam) {
-          if (!(await Game.roomExists(roomParam))) { setError('Room ' + roomParam + ' not found.'); return; }
-          const mine = await window.fb.db.ref('rooms/' + roomParam + '/players/' + id).get();
-          if (mine.exists() && mine.val().name) {
-            setName(mine.val().name);
-            Game.bindPresence(roomParam, id);
-            setJoined(true);
-          }
+        // resume from the link's ?room=, or the last room saved on this device
+        let resume = roomParam;
+        if (!resume) { try { resume = localStorage.getItem(RKEY) || ''; } catch (_) {} }
+        if (!resume) return;
+
+        if (!(await Game.roomExists(resume))) {
+          if (roomParam) setError('Room ' + resume + ' not found.'); else clearRoom();
+          return;
+        }
+        const status = (await window.fb.db.ref('rooms/' + resume + '/publicState/status').get()).val();
+        if (status === 'ended') { clearRoom(); return; }
+
+        const mine = await window.fb.db.ref('rooms/' + resume + '/players/' + id).get();
+        if (mine.exists() && mine.val().name && !mine.val().kicked) {
+          // still a member → rejoin seamlessly
+          setName(mine.val().name);
+          setRoom(resume);
+          setRoomInput(resume);
+          Game.bindPresence(resume, id);
+          setJoined(true);
+          saveRoom(resume);
+        } else if (roomParam) {
+          // arrived via link but not a member yet → prefill the join screen
+          setRoom(resume);
+          setRoomInput(resume);
         }
       } catch (e) { setError((e && e.message) || 'Connection error'); }
     })();
@@ -62,46 +106,188 @@ function PlayerApp() {
 
   /* ── ticking clock for the timer display ── */
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 250);
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
-  /* ── point the audio element at my assigned track ── */
+  /* ── pre-fetch the WHOLE assigned track into memory, then play from a
+     local blob URL. Streaming during playback was the source of the
+     intermittent stalls; a fully-downloaded blob never stalls mid-track.
+     Falls back to the direct streaming URL if fetch is blocked (e.g. CORS). ── */
+  const assignUrl = assign && assign.url;
   useEffect(() => {
-    const a = audioRef.current;
-    if (a && assign && assign.url && a.src !== assign.url) a.src = assign.url;
-  }, [assign]);
+    // reset any previous track
+    setAudioUrl(null);
+    setLoadPct(0);
+    pctWriteRef.current = -1;
+    if (objUrlRef.current) { URL.revokeObjectURL(objUrlRef.current); objUrlRef.current = null; }
+    if (!assignUrl) { reportReady(null); return; }
+    reportReady({ pct: 0, armed: false });
 
-  /* ── drift-correcting sync loop ── */
+    let cancelled = false;
+    const ready = () => {                // download finished — tell the booth
+      reportReady({ pct: 100, armed: false });
+      pctWriteRef.current = 100;
+    };
+    const useStream = () => {           // graceful fallback: stream the URL directly
+      if (cancelled) return;
+      const a = audioRef.current;
+      if (a && a.src !== assignUrl) { a.src = assignUrl; a.load(); }
+      setAudioUrl(assignUrl);
+      setLoadPct(100);
+      ready();
+    };
+    const useBlob = (blob) => {
+      if (cancelled) return;
+      const obj = URL.createObjectURL(blob);
+      objUrlRef.current = obj;
+      const a = audioRef.current;
+      if (a) { a.src = obj; a.load(); }
+      setAudioUrl(obj);
+      setLoadPct(100);
+      ready();
+    };
+
+    (async () => {
+      try {
+        const res = await fetch(assignUrl);
+        if (!res.ok) throw new Error('http ' + res.status);
+        const total = Number(res.headers.get('Content-Length')) || 0;
+        if (res.body && total) {
+          const reader = res.body.getReader();
+          const chunks = [];
+          let got = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (cancelled) { reader.cancel(); return; }
+            chunks.push(value); got += value.length;
+            const pct = Math.min(99, Math.round((got / total) * 100));
+            setLoadPct(pct);
+            if (pct - pctWriteRef.current >= 5) { pctWriteRef.current = pct; reportReady({ pct, armed: false }); }
+          }
+          useBlob(new Blob(chunks, { type: res.headers.get('Content-Type') || 'audio/mpeg' }));
+        } else {
+          useBlob(await res.blob());
+        }
+      } catch (_) {
+        useStream();                    // CORS or network — fall back to streaming
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [assignUrl]);
+
+  // release the blob URL when the component goes away
+  useEffect(() => () => { if (objUrlRef.current) URL.revokeObjectURL(objUrlRef.current); }, []);
+
+  /* ── drift-correcting sync loop ──
+     Buffer-aware + gentle: nudge playbackRate for small drift (inaudible),
+     only hard-seek for a big gap, and never fight an active buffer/stall —
+     which is what caused the seek→stall→seek "cutting" before. */
   useEffect(() => {
     const id = setInterval(() => {
       const { ps, started } = liveRef.current;
       const a = audioRef.current;
       if (!a || !started || !ps || !ps.audio) return;
-      const expected = Game.audioPos(ps.audio);
-      if (ps.audio.playing) {
-        if (a.paused) a.play().catch(() => {});
-        if (Math.abs(a.currentTime - expected) > 0.35) { try { a.currentTime = expected; } catch (_) {} }
-      } else {
+
+      // paused by the booth
+      if (!ps.audio.playing) {
         if (!a.paused) a.pause();
-        if (Math.abs(a.currentTime - expected) > 0.2) { try { a.currentTime = expected; } catch (_) {} }
+        if (a.playbackRate !== 1) a.playbackRate = 1;
+        const expected = Game.audioPos(ps.audio);
+        if (Math.abs(a.currentTime - expected) > 0.5) { try { a.currentTime = expected; } catch (_) {} }
+        return;
       }
-    }, 250);
-    return () => clearInterval(id);
+
+      // should be playing
+      if (a.paused) a.play().catch(() => {});
+
+      // mid-seek or starved buffer → let it recover, don't pile on more seeks
+      if (a.seeking || a.readyState < 3 /* HAVE_FUTURE_DATA */) {
+        if (a.playbackRate !== 1) a.playbackRate = 1;
+        return;
+      }
+
+      const expected = Game.audioPos(ps.audio);
+      const drift = a.currentTime - expected;   // +ahead, −behind
+      const ad = Math.abs(drift);
+
+      if (ad > 2) {
+        // big gap → hard-seek, but only if the target is actually buffered
+        if (isBuffered(a, expected)) { try { a.currentTime = expected; } catch (_) {} }
+        a.playbackRate = 1;
+      } else if (ad > 0.12) {
+        // small drift → gently slew speed ±3% (no audible cut)
+        a.playbackRate = drift > 0 ? 0.97 : 1.03;
+      } else if (a.playbackRate !== 1) {
+        a.playbackRate = 1;
+      }
+    }, 500);
+    return () => { clearInterval(id); const a = audioRef.current; if (a) a.playbackRate = 1; };
   }, []);
+
+  /* ── react instantly when the booth hits play/pause, so every armed phone
+     starts the song on the same Firebase event (not up to a loop-tick late). ── */
+  const psAudio = ps && ps.audio;
+  useEffect(() => {
+    if (!started) return;
+    const a = audioRef.current;
+    if (!a || !psAudio) return;
+    const expected = Game.audioPos(psAudio);
+    if (psAudio.playing) {
+      if (isBuffered(a, expected)) { try { a.currentTime = expected; } catch (_) {} }
+      a.play().catch(() => {});
+    } else {
+      if (!a.paused) a.pause();
+      try { a.currentTime = expected; } catch (_) {}
+    }
+  }, [started, psAudio && psAudio.playing, psAudio && psAudio.anchorServerMs]);
 
   /* ── drop the headset gate whenever we leave the live round ── */
   const status = ps && ps.status;
   useEffect(() => {
-    if (status !== 'live' && started) {
-      setStarted(false);
-      if (audioRef.current) audioRef.current.pause();
+    if (status !== 'live') {
+      if (started) {
+        setStarted(false);
+        if (audioRef.current) audioRef.current.pause();
+      }
+      reportReady(null);
+    } else {
+      setShowBoard(false); // a new round started — leave the leaderboard
     }
   }, [status]);
 
+  /* ── the host removed me from the room ── */
+  const meKicked = !!(players[uid] && players[uid].kicked);
+  useEffect(() => {
+    if (joined && meKicked) {
+      clearRoom();
+      Game.unbindPresence(room, uid);
+      if (audioRef.current) audioRef.current.pause();
+      setStarted(false);
+      setShowBoard(false);
+      setJoined(false);
+      setError('You were removed from the room by the host.');
+    }
+  }, [joined, meKicked]);
+
+  /* ── the host ended the game ── */
+  useEffect(() => {
+    if (joined && status === 'ended') {
+      clearRoom();
+      Game.leaveRoom(room, uid).catch(() => {});
+      if (audioRef.current) audioRef.current.pause();
+      setStarted(false);
+      setShowBoard(false);
+      setJoined(false);
+      setError('The host ended the game.');
+    }
+  }, [joined, status]);
+
   /* ── actions ── */
   const doJoin = async () => {
-    const code = (room || roomInput).toUpperCase().trim();
+    const code = (roomInput || room).toUpperCase().trim();
     if (!code) { setError('Enter a room code.'); return; }
     if (!name.trim()) { setError('Enter a name.'); return; }
     setJoining(true); setError(null);
@@ -110,18 +296,40 @@ function PlayerApp() {
       await Game.joinRoom(code, name.trim());
       setRoom(code);
       setJoined(true);
+      saveRoom(code);
     } catch (e) { setError((e && e.message) || 'Could not join.'); }
     setJoining(false);
   };
 
-  const startListening = () => {
+  // Tap "I'm ready": unlock audio with a user gesture (required by mobile
+  // browsers so the booth can start sound remotely) WITHOUT starting the song,
+  // then report armed. The booth starts everyone together.
+  const arm = () => {
     const a = audioRef.current;
-    if (a && assign && assign.url) {
-      if (a.src !== assign.url) a.src = assign.url;
-      a.play().then(() => setStarted(true)).catch(() => setStarted(true));
+    const done = () => { setStarted(true); reportReady({ pct: 100, armed: true }); };
+    if (a && audioUrl) {
+      if (a.src !== audioUrl) a.src = audioUrl;
+      a.play().then(() => {
+        const live = liveRef.current.ps;
+        const hostPlaying = !!(live && live.audio && live.audio.playing);
+        if (!hostPlaying) { a.pause(); try { a.currentTime = 0; } catch (_) {} }
+        done();
+      }).catch(done);
     } else {
-      setStarted(true);
+      done();
     }
+  };
+
+  // voluntarily leave the room
+  const leave = async () => {
+    if (!window.confirm('Leave the game?')) return;
+    clearRoom();
+    try { await Game.leaveRoom(room, uid); } catch (_) {}
+    if (audioRef.current) audioRef.current.pause();
+    setStarted(false);
+    setShowBoard(false);
+    setJoined(false);
+    setRoom('');
   };
 
   const me = wId(players[uid], uid) || { id: uid, name: name || 'YOU', c1: '#9A6BFF', c2: '#25E6FF' };
@@ -130,12 +338,14 @@ function PlayerApp() {
   let view;
   if (!joined) {
     view = <JoinView room={room} roomParam={roomParam} roomInput={roomInput} setRoomInput={setRoomInput} name={name} setName={setName} onJoin={doJoin} joining={joining} error={error} />;
+  } else if (showBoard) {
+    view = <PlayScoresView uid={uid} players={players} scores={scores} onBack={() => setShowBoard(false)} />;
   } else if (!ps || status === 'lobby' || status === 'setup') {
-    view = <WaitView me={me} room={room} count={window.IMP.connectedList(players).length} status={status} />;
+    view = <WaitView me={me} room={room} count={window.IMP.connectedList(players).length} status={status} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else if (status === 'live') {
-    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} assignReady={!!(assign && assign.url)} started={started} onStart={startListening} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
+    view = <PlayLiveView me={me} ps={ps} players={players} uid={uid} assignReady={!!audioUrl} loadPct={loadPct} started={started} onStart={arm} myVote={myVote} onVote={(t) => Game.castVote(room, t)} />;
   } else if (status === 'reveal') {
-    view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} />;
+    view = <PlayRevealView uid={uid} players={players} result={results[ps.round]} myVote={myVote} onBoard={() => setShowBoard(true)} onLeave={leave} />;
   } else {
     view = <PlayScoresView uid={uid} players={players} scores={scores} />;
   }
@@ -158,12 +368,10 @@ function JoinView({ room, roomParam, roomInput, setRoomInput, name, setName, onJ
           WHO&apos;S THE<br/><span style={{ color: 'var(--magenta)', textShadow: 'var(--glow-magenta)' }}>IMPOSTOR</span>
         </h1>
         <p style={{ textAlign: 'center', color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 12.5, margin: '6px 0 28px' }}>
-          {room ? 'Joining room ' + room : 'Enter your room code'}
+          Enter the room code from the booth
         </p>
 
-        {!roomParam && (
-          <input value={roomInput} onChange={(e) => setRoomInput(e.target.value.toUpperCase())} placeholder="ROOM CODE" className="field" style={fieldStyle} />
-        )}
+        <input value={roomInput} onChange={(e) => setRoomInput(e.target.value.toUpperCase())} placeholder="ROOM CODE" className="field" style={fieldStyle} autoCapitalize="characters" autoCorrect="off" />
         <input value={name} onChange={(e) => setName(e.target.value.slice(0, 8))} placeholder="YOUR NAME" className="field" style={{ ...fieldStyle, marginTop: 12 }} />
 
         {error && <p style={{ color: 'var(--magenta)', fontFamily: 'var(--font-mono)', fontSize: 12.5, textAlign: 'center', marginTop: 14 }}>{error}</p>}
@@ -184,7 +392,7 @@ const fieldStyle = {
 };
 
 /* ════════════ WAITING ════════════ */
-function WaitView({ me, room, count, status }) {
+function WaitView({ me, room, count, status, onBoard, onLeave }) {
   return (
     <div className="screen">
       <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 8 }}>
@@ -195,13 +403,25 @@ function WaitView({ me, room, count, status }) {
           {status === 'setup' ? 'The booth is setting the trap…' : "You're in. Waiting for the booth…"}
         </p>
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--violet)' }}>{count} in the room</p>
+        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          {onBoard && (
+            <button className="chip" style={{ cursor: 'pointer', color: 'var(--amber)' }} onClick={onBoard}>
+              <Icon.crown s={14} c="var(--amber)"/> Standings
+            </button>
+          )}
+          {onLeave && (
+            <button className="chip" style={{ cursor: 'pointer', color: 'var(--magenta)' }} onClick={onLeave}>
+              <Icon.x s={13} c="var(--magenta)"/> Leave
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 /* ════════════ LIVE (player) ════════════ */
-function PlayLiveView({ me, ps, players, uid, assignReady, started, onStart, myVote, onVote }) {
+function PlayLiveView({ me, ps, players, uid, assignReady, loadPct, started, onStart, myVote, onVote }) {
   const remaining = Game.timerRemaining(ps.timer);
   const playing = !!(ps.audio && ps.audio.playing);
   const others = window.IMP.connectedList(players).filter((p) => p.id !== uid);
@@ -212,13 +432,15 @@ function PlayLiveView({ me, ps, players, uid, assignReady, started, onStart, myV
         <div className="screen__scroll" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: 10 }}>
           <Icon.head s={64} c="var(--cyan)" />
           <h1 className="h-display" style={{ fontSize: 28, margin: '10px 0 2px' }}>PUT ON YOUR<br/>HEADSET</h1>
-          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--faint)', maxWidth: 240 }}>
-            {assignReady ? 'Tap to start listening. Keep it to yourself.' : 'Getting your track ready…'}
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12.5, color: 'var(--faint)', maxWidth: 250 }}>
+            {assignReady
+              ? 'Track loaded. Tap ready — the booth starts the music for everyone at once.'
+              : `Downloading your track… ${loadPct || 0}%`}
           </p>
         </div>
         <div className="dock">
           <button className="btn btn--primary" disabled={!assignReady} onClick={onStart}>
-            <Icon.play c="#0A0410" /> Tap to listen
+            <Icon.head c="#0A0410" /> {assignReady ? "I'm ready" : `Downloading… ${loadPct || 0}%`}
           </button>
         </div>
       </div>
@@ -276,7 +498,7 @@ function PlayLiveView({ me, ps, players, uid, assignReady, started, onStart, myV
 }
 
 /* ════════════ REVEAL (player) ════════════ */
-function PlayRevealView({ uid, players, result, myVote }) {
+function PlayRevealView({ uid, players, result, myVote, onBoard, onLeave }) {
   if (!result) {
     return <div className="screen"><div className="screen__scroll" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ fontFamily: 'var(--font-mono)', color: 'var(--faint)' }}>Tallying…</p></div></div>;
   }
@@ -306,19 +528,34 @@ function PlayRevealView({ uid, players, result, myVote }) {
             {delta > 0 ? `+${delta}` : '+0'} <span style={{ fontSize: 14, color: 'var(--faint)' }}>pts</span>
           </div>
         </div>
+        {onBoard && (
+          <button className="btn btn--ghost" style={{ marginTop: 22 }} onClick={onBoard}>
+            <Icon.crown c="var(--amber)"/> View standings
+          </button>
+        )}
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--faint)', marginTop: 22 }}>Waiting for the next round…</p>
+        {onLeave && (
+          <button onClick={onLeave} style={{ background: 'none', border: 'none', color: 'var(--magenta)', fontFamily: 'var(--font-mono)', fontSize: 12.5, marginTop: 14, cursor: 'pointer' }}>
+            Leave game
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 /* ════════════ SCOREBOARD (player) ════════════ */
-function PlayScoresView({ uid, players, scores }) {
+function PlayScoresView({ uid, players, scores, onBack }) {
   const ranked = window.IMP.connectedList(players).sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
   const medal = ['var(--amber)', '#C9D2E0', '#E08A4B'];
   return (
     <div className="screen">
       <div className="screen__scroll" style={{ paddingTop: 54 }}>
+        {onBack && (
+          <button className="chip" style={{ cursor: 'pointer', marginBottom: 16 }} onClick={onBack}>
+            <Icon.back s={14}/> Back
+          </button>
+        )}
         <p className="eyebrow" style={{ color: 'var(--amber)' }}>Standings</p>
         <h1 className="h-display" style={{ fontSize: 34, margin: '6px 0 22px' }}>SCOREBOARD</h1>
         <div className="card" style={{ overflow: 'hidden' }}>

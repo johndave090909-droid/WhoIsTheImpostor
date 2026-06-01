@@ -3,7 +3,7 @@ const fmt = (s) => `${Math.floor(s/60)}:${String(Math.max(0, s)%60).padStart(2,'
 const withId = (obj, id) => (obj ? Object.assign({ id }, obj) : null);
 
 /* ════════════════════ LIVE ROUND ════════════════════ */
-function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }) {
+function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, assignments, onReveal, onEndGame }) {
   const [, setTick] = useState(0);
   const [revealView, setRevealView] = useState(true);
   useEffect(() => {
@@ -11,6 +11,8 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }
     return () => clearInterval(id);
   }, []);
 
+  ready = ready || {};
+  assignments = assignments || {};
   const live = window.IMP.connectedList(players);
   const crowd = withId(tracks[draft.common], draft.common);
   const imp = withId(tracks[draft.impostor], draft.impostor);
@@ -21,6 +23,13 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }
   const pct = (remaining / Game.ROUND_SECS) * 100;
   const voted = Object.keys(votes || {}).length;
 
+  // download/arm readiness — the song can't start until every connected
+  // phone that has a track this round has finished loading and armed.
+  const needers = live.filter(p => assignments[p.id]);
+  const armedCount = needers.filter(p => ready[p.id] && ready[p.id].armed).length;
+  const allReady = needers.length > 0 && armedCount === needers.length;
+  const startLocked = !playing && !allReady;   // can't begin until everyone's loaded
+
   return (
     <div className="screen">
       <div className="screen__scroll" style={{ paddingTop: 54 }}>
@@ -29,7 +38,10 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }
           <div className="chip" style={{ color: 'var(--magenta)' }}>
             <span className="pulse" style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--magenta)', display: 'inline-block' }} /> Live · Round {round}
           </div>
-          <div className="chip"><Icon.head s={13} c="var(--cyan)"/> {live.length} synced</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div className="chip" style={{ color: 'var(--cyan)', fontFamily: 'var(--font-mono)' }}>Room {room}</div>
+            <div className="chip"><Icon.head s={13} c="var(--cyan)"/> {live.length}</div>
+          </div>
         </div>
 
         {/* timer */}
@@ -42,15 +54,46 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }
               <div style={{ height: '100%', width: `${pct}%`, borderRadius: 999, background: 'linear-gradient(90deg, var(--cyan), var(--violet), var(--magenta))', transition: 'width .25s linear' }} />
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', alignItems: 'center' }}>
-              <button onClick={() => Game.restart(room)} className="ctl"><Icon.sync s={18}/></button>
-              <button onClick={() => Game.toggle(room, playing)} className="ctl ctl--play">{playing ? <Icon.pause s={26} c="#0A0410"/> : <Icon.play s={26} c="#0A0410"/>}</button>
+              <button onClick={() => Game.restart(room)} disabled={!allReady} className="ctl" style={{ opacity: allReady ? 1 : 0.4 }}><Icon.sync s={18}/></button>
+              <button onClick={() => Game.toggle(room, playing)} disabled={startLocked} className="ctl ctl--play" style={{ opacity: startLocked ? 0.4 : 1 }}>{playing ? <Icon.pause s={26} c="#0A0410"/> : <Icon.play s={26} c="#0A0410"/>}</button>
               <button onClick={() => Game.addTime(room, 30)} className="ctl" style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 700 }}>+30</button>
             </div>
-            <p style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', margin: '16px 0 0' }}>
-              {playing ? 'All headsets playing in sync' : 'Paused on every headset'}
+            <p style={{ fontSize: 11.5, color: startLocked ? 'var(--amber)' : 'var(--faint)', fontFamily: 'var(--font-mono)', margin: '16px 0 0' }}>
+              {startLocked
+                ? `Waiting for headsets to load — ${armedCount}/${needers.length} ready`
+                : playing ? 'All headsets playing in sync' : 'Paused on every headset'}
             </p>
           </div>
         </div>
+
+        {/* download readiness — hide once the music is rolling */}
+        {!playing && (
+          <div className="card" style={{ padding: '13px 15px', marginBottom: 14, boxShadow: allReady ? '0 0 0 1.5px var(--lime) inset' : '0 0 0 1px var(--line) inset' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: needers.length ? 12 : 0 }}>
+              <span className="eyebrow" style={{ color: allReady ? 'var(--lime)' : 'var(--cyan)' }}>
+                {allReady ? '✓ Everyone loaded — press play' : `Loading headsets · ${armedCount}/${needers.length}`}
+              </span>
+            </div>
+            {needers.length === 0 && (
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: 11.5, color: 'var(--faint)', margin: 0 }}>Waiting for phones to receive their track…</p>
+            )}
+            {needers.map(p => {
+              const r = ready[p.id] || {};
+              const done = !!r.armed;
+              const barPct = done ? 100 : (r.pct || 0);
+              return (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
+                  <Avatar p={p} size={24} />
+                  <span style={{ width: 58, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                  <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'var(--surface-3)', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${barPct}%`, borderRadius: 999, background: done ? 'var(--lime)' : 'var(--cyan)', transition: 'width .2s linear' }} />
+                  </div>
+                  <span style={{ width: 40, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 11, color: done ? 'var(--lime)' : 'var(--faint)' }}>{done ? 'ready' : barPct + '%'}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* two streams */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
@@ -97,7 +140,10 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, onReveal }
 
       <div className="dock">
         <p style={{ textAlign: 'center', color: 'var(--faint)', fontSize: 11.5, margin: '0 0 10px', fontFamily: 'var(--font-mono)' }}>{voted}/{live.length} have voted</p>
-        <button className="btn btn--danger" onClick={onReveal}><Icon.eye c="#fff"/> Reveal the impostor</button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {onEndGame && <button className="btn btn--ghost" style={{ flex: '0 0 auto', width: 'auto', padding: '18px 18px' }} onClick={onEndGame}>End</button>}
+          <button className="btn btn--danger" style={{ flex: 1 }} onClick={onReveal}><Icon.eye c="#fff"/> Reveal the impostor</button>
+        </div>
       </div>
     </div>
   );
