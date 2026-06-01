@@ -303,12 +303,13 @@
     await roomRef(room, "votes").set(null);
     await roomRef(room, "ready").set(null);
 
-    // only PLAYING members get a track — audience is watch-only (no assignment),
-    // so they never enter the booth's "loading headsets" gate.
+    // Everyone connected gets audio: the impostor hears the impostor track;
+    // everyone else (other players AND the audience) hears the common crowd
+    // track. The audience never receives the impostor URL, so the secret holds.
     const assignments = {};
     Object.keys(players || {}).forEach((uid) => {
       const p = players[uid];
-      if (!p || !p.connected || p.role !== "playing") return;
+      if (!p || !p.connected) return;
       const isImp = uid === draft.impostorId;
       assignments[uid] = {
         url: isImp ? impUrl : commonUrl,

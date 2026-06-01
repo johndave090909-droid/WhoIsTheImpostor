@@ -101,7 +101,7 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
 
         {/* two streams */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 22 }}>
-          <StreamCard label="Crowd stream" accent="var(--cyan)" t={crowd} count={Math.max(0, playingMembers.length - 1)} playing={playing} />
+          <StreamCard label="Crowd stream" accent="var(--cyan)" t={crowd} count={Math.max(0, playingMembers.length - 1) + audienceMembers.length} playing={playing} />
           <StreamCard label="Impostor stream" accent="var(--magenta)" t={imp} count={1} playing={playing} />
         </div>
 
@@ -154,7 +154,7 @@ function LiveScreen({ room, players, tracks, round, draft, ps, votes, ready, ass
                     <Avatar p={p} size={34} dim />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}>{p.name}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}>👀 watching</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--faint)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🎧 {crowd ? crowd.title : 'crowd track'}</div>
                     </div>
                     {hasVoted && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '0.08em', color: 'var(--lime)', padding: '3px 7px', borderRadius: 999, boxShadow: '0 0 0 1px var(--lime) inset' }}>VOTED</span>}
                   </div>
