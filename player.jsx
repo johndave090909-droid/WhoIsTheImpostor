@@ -598,8 +598,11 @@ function PlayScoresView({ uid, players, scores, onBack }) {
           {ranked.map((p, i) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: p.id === uid ? 'rgba(154,107,255,0.12)' : 'transparent', borderBottom: i < ranked.length - 1 ? '1px solid var(--line)' : 'none' }}>
               <span style={{ width: 22, fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 15, color: medal[i] || 'var(--faint)', textAlign: 'center' }}>{i + 1}</span>
-              <Avatar p={p} size={38} />
-              <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15 }}>{p.name}{p.id === uid ? ' · you' : ''}</span>
+              <Avatar p={p} size={38} dim={!window.IMP.isPlaying(p)} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}{p.id === uid ? ' · you' : ''}</div>
+                <RoleTag playing={window.IMP.isPlaying(p)} />
+              </div>
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 16, color: i === 0 ? 'var(--amber)' : 'var(--ink)' }}>{scores[p.id] || 0}</span>
             </div>
           ))}

@@ -95,4 +95,18 @@ function SectionLabel({ children, accent }) {
   );
 }
 
-Object.assign(window, { Icon, Avatar, Eq, Wave, Cover, SectionLabel });
+/* role tag — Playing vs Audience, used on scoreboards */
+function RoleTag({ playing }) {
+  const c = playing ? 'var(--lime)' : 'var(--violet)';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 2,
+      fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.06em', color: c,
+    }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: c, boxShadow: `0 0 6px ${c}` }} />
+      {playing ? '🎧 Playing' : '👀 Audience'}
+    </span>
+  );
+}
+
+Object.assign(window, { Icon, Avatar, Eq, Wave, Cover, SectionLabel, RoleTag });

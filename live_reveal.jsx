@@ -344,8 +344,11 @@ function ScoreboardScreen({ players, round, scores, completed, onBack }) {
           {ranked.map((p, i) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: i < ranked.length-1 ? '1px solid var(--line)' : 'none' }}>
               <span style={{ width: 22, fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 15, color: medal[i] || 'var(--faint)', textAlign: 'center' }}>{i+1}</span>
-              <Avatar p={p} size={38} />
-              <span style={{ flex: 1, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15 }}>{p.name}</span>
+              <Avatar p={p} size={38} dim={!window.IMP.isPlaying(p)} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                <RoleTag playing={window.IMP.isPlaying(p)} />
+              </div>
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 16, color: i===0?'var(--amber)':'var(--ink)' }}>{scores[p.id]||0}</span>
             </div>
           ))}
